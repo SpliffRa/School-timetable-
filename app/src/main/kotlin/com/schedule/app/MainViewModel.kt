@@ -14,6 +14,7 @@ import com.schedule.app.data.model.Lesson
 import com.schedule.app.data.model.Schedule
 import com.schedule.app.data.network.AppUpdateInfo
 import com.schedule.app.data.network.AppUpdateManager
+import com.schedule.app.data.network.AppUpdateNotificationHelper
 import com.schedule.app.data.network.CloudSync
 import com.schedule.app.data.network.SyncService
 import com.schedule.app.data.store.AppDataStore
@@ -140,6 +141,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _availableUpdateBanner = MutableStateFlow<AppUpdateInfo?>(null)
     val availableUpdateBanner: StateFlow<AppUpdateInfo?> = _availableUpdateBanner.asStateFlow()
 
+    private var lastNotifiedVersionCode: Int = 0
+
+    /**
+     * Открывает диалоговое окно обновления для указанной версии
+     */
+    fun showUpdateAvailableDialog(info: AppUpdateInfo) {
+        _updateState.value = UpdateUiState.UpdateAvailable(info)
+    }
+
     /**
      * Проверяет наличие обновления в облаке.
      * @param isManual true если вызвано по нажатию пользователем (показывает диалог и индикатор)
@@ -154,11 +164,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val updateInfo = result.getOrNull()
                 if (updateInfo != null) {
                     _availableUpdateBanner.value = updateInfo
+                    if (updateInfo.versionCode > BuildConfig.VERSION_CODE) {
+                        // Отправляем системное уведомление в Android (шторку) с кнопкой «Обновить»
+                        if (lastNotifiedVersionCode != updateInfo.versionCode) {
+                            lastNotifiedVersionCode = updateInfo.versionCode
+                            AppUpdateNotificationHelper.showUpdateNotification(getApplication(), updateInfo)
+                        }
+                    }
                     if (isManual) {
                         _updateState.value = UpdateUiState.UpdateAvailable(updateInfo)
                     }
                 } else {
                     _availableUpdateBanner.value = null
+                    AppUpdateNotificationHelper.dismissNotification(getApplication())
                     if (isManual) {
                         _updateState.value = UpdateUiState.UpToDate
                     }
@@ -199,6 +217,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             if (downloadResult.isSuccess) {
                 val apkFile = downloadResult.getOrThrow()
+                AppUpdateNotificationHelper.dismissNotification(getApplication())
                 _updateState.value = UpdateUiState.ReadyToInstall(info, apkFile)
                 AppUpdateManager.installApk(context, apkFile)
             } else {

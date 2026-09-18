@@ -36,13 +36,17 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.FormatSize
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -294,6 +298,123 @@ fun MainScreen(
                         titleContentColor = MaterialTheme.colorScheme.onBackground
                     )
                 )
+
+                // Уведомление о доступном обновлении приложения с кнопкой «Обновить»
+                val availableUpdate by viewModel.availableUpdateBanner.collectAsStateWithLifecycle()
+                var isUpdateBannerDismissed by remember { mutableStateOf(false) }
+
+                AnimatedVisibility(
+                    visible = availableUpdate != null && !isUpdateBannerDismissed,
+                    enter = fadeIn() + expandVertically(),
+                    exit = fadeOut() + shrinkVertically()
+                ) {
+                    availableUpdate?.let { updateInfo ->
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 6.dp),
+                            shape = RoundedCornerShape(16.dp),
+                            color = if (isDark) Color(0xFF1E2638) else Color(0xFFF0F5FF),
+                            border = BorderStroke(
+                                1.dp,
+                                if (isDark) Color(0xFF3E63DD).copy(alpha = 0.6f) else Color(0xFFADC8FF)
+                            ),
+                            shadowElevation = 2.dp
+                        ) {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 14.dp, vertical = 10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Surface(
+                                    modifier = Modifier.size(38.dp),
+                                    shape = CircleShape,
+                                    color = if (isDark) Color(0xFF2B3A5A) else Color(0xFFDCE8FE)
+                                ) {
+                                    Box(contentAlignment = Alignment.Center) {
+                                        Icon(
+                                            imageVector = Icons.Filled.SystemUpdate,
+                                            contentDescription = null,
+                                            tint = if (isDark) Color(0xFF7099FF) else Color(0xFF2B5BE8),
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                }
+
+                                Spacer(Modifier.width(10.dp))
+
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = "Доступно обновление v${updateInfo.versionName}",
+                                            style = MaterialTheme.typography.titleSmall,
+                                            fontWeight = FontWeight.Bold,
+                                            color = if (isDark) Color.White else Color(0xFF161922)
+                                        )
+                                        Spacer(Modifier.width(6.dp))
+                                        Surface(
+                                            shape = RoundedCornerShape(6.dp),
+                                            color = if (isDark) Color(0xFF2E4068) else Color(0xFFDBE7FF)
+                                        ) {
+                                            Text(
+                                                text = "Новое",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (isDark) Color(0xFF91B4FF) else Color(0xFF2B5BE8),
+                                                modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
+
+                                    Text(
+                                        text = if (updateInfo.releaseNotes.isNotBlank()) updateInfo.releaseNotes else "Вышла новая версия приложения",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.secondary,
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+
+                                Spacer(Modifier.width(8.dp))
+
+                                // Кнопка «Обновить»
+                                Button(
+                                    onClick = {
+                                        viewModel.showUpdateAvailableDialog(updateInfo)
+                                    },
+                                    shape = RoundedCornerShape(10.dp),
+                                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (isDark) Color(0xFF3E63DD) else Color(0xFF2B5BE8)
+                                    ),
+                                    modifier = Modifier.height(34.dp)
+                                ) {
+                                    Text(
+                                        text = "Обновить",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                }
+
+                                Spacer(Modifier.width(4.dp))
+
+                                // Кнопка закрыть (скрыть баннер)
+                                IconButton(
+                                    onClick = { isUpdateBannerDismissed = true },
+                                    modifier = Modifier.size(28.dp)
+                                ) {
+                                    Icon(
+                                        imageVector = Icons.Filled.Close,
+                                        contentDescription = "Скрыть",
+                                        tint = MaterialTheme.colorScheme.secondary,
+                                        modifier = Modifier.size(16.dp)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
 
                 // Ошибка синхронизации
                 AnimatedVisibility(visible = syncError != null) {
