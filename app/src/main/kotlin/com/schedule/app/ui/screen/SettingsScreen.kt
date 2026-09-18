@@ -120,7 +120,6 @@ fun SettingsScreen(
     var passwordDialogError by remember { mutableStateOf(false) }
     var showChangePinDialog by remember { mutableStateOf(false) }
     var showImportDialog by remember { mutableStateOf(false) }
-    var showPublishUpdateDialog by remember { mutableStateOf(false) }
     var importText by remember { mutableStateOf("") }
     var importError by remember { mutableStateOf(false) }
 
@@ -128,7 +127,6 @@ fun SettingsScreen(
     BackHandler {
         when {
             updateState !is UpdateUiState.Idle -> viewModel.dismissUpdateDialog()
-            showPublishUpdateDialog -> showPublishUpdateDialog = false
             showThemeDialog -> showThemeDialog = false
             showFontSizeDialog -> showFontSizeDialog = false
             showChangePinDialog -> showChangePinDialog = false
@@ -206,18 +204,6 @@ fun SettingsScreen(
             onDownloadAndInstall = { info -> viewModel.startDownloadAndInstall(context, info) },
             onInstallDownloaded = { apkFile -> viewModel.installDownloadedApk(context, apkFile) },
             onDismiss = { viewModel.dismissUpdateDialog() }
-        )
-    }
-
-    // Диалог публикации новой версии в облако (для режима папы)
-    if (showPublishUpdateDialog) {
-        PublishUpdateDialog(
-            onPublish = { info ->
-                viewModel.publishUpdateToCloud(info) {
-                    showPublishUpdateDialog = false
-                }
-            },
-            onDismiss = { showPublishUpdateDialog = false }
         )
     }
 
@@ -648,23 +634,6 @@ fun SettingsScreen(
                         badge = if (availableUpdateBanner != null) "Есть v${availableUpdateBanner?.versionName}!" else "Проверить",
                         onClick = { viewModel.checkForUpdates(isManual = true) }
                     )
-
-                    if (selectedTab == "SERVER") {
-                        Box(
-                            Modifier
-                                .fillMaxWidth()
-                                .height(1.dp)
-                                .background(if (isDark) Color(0xFF2B303E) else Color(0xFFE8ECF4))
-                        )
-
-                        SettingsMenuItem(
-                            icon = Icons.Filled.CloudDownload,
-                            title = "Опубликовать версию в облако",
-                            subtitle = "Выпустить новую версию для планшетов семьи",
-                            badge = "Облако",
-                            onClick = { showPublishUpdateDialog = true }
-                        )
-                    }
                 }
             }
 
@@ -672,7 +641,7 @@ fun SettingsScreen(
 
             // Версия
             Text(
-                text = "Версия ${BuildConfig.VERSION_NAME} • Apple UI Design",
+                text = "Версия ${BuildConfig.VERSION_NAME} • Created by Levchenko Nikita",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.7f),
                 modifier = Modifier.align(Alignment.CenterHorizontally)
@@ -1275,101 +1244,6 @@ fun AppUpdateDialog(
                 TextButton(onClick = onDismiss) {
                     Text("Закрыть")
                 }
-            }
-        }
-    )
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Диалог публикации новой версии APK в облако (для режима папы)
-// ─────────────────────────────────────────────────────────────────────────────
-
-@Composable
-fun PublishUpdateDialog(
-    onPublish: (AppUpdateInfo) -> Unit,
-    onDismiss: () -> Unit
-) {
-    var versionName by remember { mutableStateOf("2.5") }
-    var versionCode by remember { mutableStateOf("25") }
-    var downloadUrl by remember { mutableStateOf("") }
-    var releaseNotes by remember { mutableStateOf("Новые функции и оптимизация расписания") }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(Icons.Filled.CloudDownload, contentDescription = null, modifier = Modifier.size(24.dp))
-                Spacer(Modifier.width(8.dp))
-                Text("Публикация в облако")
-            }
-        },
-        text = {
-            Column(
-                modifier = Modifier.fillMaxWidth(),
-                verticalArrangement = Arrangement.spacedBy(8.dp)
-            ) {
-                Text(
-                    text = "Укажите данные о новой версии. Все устройства семьи получат предложение обновиться:",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.secondary
-                )
-
-                OutlinedTextField(
-                    value = versionName,
-                    onValueChange = { versionName = it },
-                    label = { Text("Версия (например, 2.5)") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                OutlinedTextField(
-                    value = versionCode,
-                    onValueChange = { if (it.all { ch -> ch.isDigit() }) versionCode = it },
-                    label = { Text("Код версии (например, 25)") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                OutlinedTextField(
-                    value = downloadUrl,
-                    onValueChange = { downloadUrl = it },
-                    label = { Text("Прямая ссылка на APK (URL)") },
-                    placeholder = { Text("https://...") },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                OutlinedTextField(
-                    value = releaseNotes,
-                    onValueChange = { releaseNotes = it },
-                    label = { Text("Список изменений") },
-                    maxLines = 3,
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = {
-                    val code = versionCode.toIntOrNull() ?: (BuildConfig.VERSION_CODE + 1)
-                    val info = AppUpdateInfo(
-                        versionCode = code,
-                        versionName = versionName.trim().ifBlank { "2.5" },
-                        downloadUrl = downloadUrl.trim(),
-                        releaseNotes = releaseNotes.trim(),
-                        releaseDate = java.time.LocalDate.now().toString()
-                    )
-                    onPublish(info)
-                },
-                enabled = downloadUrl.isNotBlank()
-            ) {
-                Text("Опубликовать")
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Отмена")
             }
         }
     )
