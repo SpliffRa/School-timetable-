@@ -397,7 +397,7 @@ class SyncService : Service() {
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setSmallIcon(R.mipmap.ic_launcher)
             .setContentTitle("Расписание обновлено! 📚")
-            .setContentText("Папа изменил расписание — посмотри!")
+            .setContentText("Расписание уроков обновлено — посмотри изменения!")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setContentIntent(pendingIntent)
             .setAutoCancel(true)

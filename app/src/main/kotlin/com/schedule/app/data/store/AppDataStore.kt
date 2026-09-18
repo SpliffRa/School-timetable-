@@ -37,25 +37,25 @@ class AppDataStore(private val context: Context) {
     /**
      * Имя устройства для текущей роли.
      * Возвращает SERVER-имя когда роль=SERVER, CLIENT-имя когда роль=CLIENT.
-     * Дефолты: "Телефон папы" / "Планшет дочки".
+     * Дефолты: "Устройство родителя" / "Устройство ребёнка".
      */
     val deviceNameFlow: Flow<String> = context.dataStore.data.map { prefs ->
         val role = prefs[KEY_ROLE] ?: "CLIENT"
         if (role == "SERVER") {
-            prefs[KEY_DEVICE_NAME_SERVER] ?: "Телефон папы"
+            prefs[KEY_DEVICE_NAME_SERVER] ?: "Устройство родителя"
         } else {
-            prefs[KEY_DEVICE_NAME_CLIENT] ?: "Планшет Алисы"
+            prefs[KEY_DEVICE_NAME_CLIENT] ?: "Устройство ребёнка"
         }
     }
 
-    /** Имя устройства в режиме SERVER (папа) */
+    /** Имя устройства в режиме SERVER (родитель) */
     val deviceNameServerFlow: Flow<String> = context.dataStore.data.map { prefs ->
-        prefs[KEY_DEVICE_NAME_SERVER] ?: "Телефон папы"
+        prefs[KEY_DEVICE_NAME_SERVER] ?: "Устройство родителя"
     }
 
-    /** Имя устройства в режиме CLIENT (Алиса) */
+    /** Имя устройства в режиме CLIENT (ребёнок) */
     val deviceNameClientFlow: Flow<String> = context.dataStore.data.map { prefs ->
-        prefs[KEY_DEVICE_NAME_CLIENT] ?: "Планшет Алисы"
+        prefs[KEY_DEVICE_NAME_CLIENT] ?: "Устройство ребёнка"
     }
 
     /** Пароль / PIN-код режима папы (по умолчанию "1234") */
@@ -68,9 +68,9 @@ class AppDataStore(private val context: Context) {
         prefs[KEY_LAST_VERSION] ?: 0L
     }
 
-    /** Код семьи для облачной синхронизации (по умолчанию "Алиса-2026") */
+    /** Код семьи для облачной синхронизации (по умолчанию "Семья-2026") */
     val syncCodeFlow: Flow<String> = context.dataStore.data.map { prefs ->
-        prefs[KEY_SYNC_CODE]?.takeIf { it.isNotBlank() } ?: "Алиса-2026"
+        prefs[KEY_SYNC_CODE]?.takeIf { it.isNotBlank() } ?: "Семья-2026"
     }
 
     /** Масштаб шрифта в приложении (1.0f = 100%, 1.15f = 115%, 1.30f = 130%, 1.45f = 145%) */

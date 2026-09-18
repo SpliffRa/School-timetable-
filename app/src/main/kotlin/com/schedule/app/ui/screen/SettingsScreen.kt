@@ -98,7 +98,7 @@ fun SettingsScreen(
     onNavigateToEditor: () -> Unit = {}
 ) {
     val currentRole by viewModel.deviceRole.collectAsStateWithLifecycle()
-    val currentSyncCode by viewModel.syncCodeFlow().collectAsStateWithLifecycle(initialValue = "Алиса-2026")
+    val currentSyncCode by viewModel.syncCodeFlow().collectAsStateWithLifecycle(initialValue = "Семья-2026")
     val fontScale by viewModel.fontScaleFlow().collectAsStateWithLifecycle(initialValue = 1.0f)
     val themeMode by viewModel.themeModeFlow().collectAsStateWithLifecycle(initialValue = "SYSTEM")
 
@@ -139,7 +139,7 @@ fun SettingsScreen(
         }
     }
 
-    // Диалог ввода пароля для перехода на «Телефон папы»
+    // Диалог ввода пароля для перехода на «Устройство родителя»
     if (showPasswordDialog) {
         PasswordPromptDialog(
             hasError = passwordDialogError,
@@ -342,17 +342,14 @@ fun SettingsScreen(
                                 syncCodeSavedSuccess = false
                             },
                             label = { Text("Код семьи") },
-                            placeholder = { Text("Алиса-2026") },
+                            placeholder = { Text("Семья-2026") },
                             singleLine = true,
-                            modifier = Modifier.weight(1f),
-                            shape = RoundedCornerShape(12.dp)
+                            modifier = Modifier.weight(1f)
                         )
-
-                        Spacer(Modifier.width(10.dp))
-
+                        Spacer(Modifier.width(8.dp))
                         Button(
                             onClick = {
-                                val code = familySyncCode.trim().ifBlank { "Алиса-2026" }
+                                val code = familySyncCode.trim().ifBlank { "Семья-2026" }
                                 viewModel.saveSyncCode(code)
                                 syncCodeSavedSuccess = true
                             },
@@ -408,7 +405,7 @@ fun SettingsScreen(
                             selected = selectedTab == "CLIENT",
                             onClick = {
                                 if (selectedTab != "CLIENT") {
-                                    viewModel.switchToAliceTablet()
+                                    viewModel.switchToChildDevice()
                                     selectedTab = "CLIENT"
                                 }
                             },
@@ -421,7 +418,7 @@ fun SettingsScreen(
                                 )
                             }
                         ) {
-                            Text("Планшет Алисы", fontWeight = FontWeight.SemiBold)
+                            Text("Устройство ребёнка", fontWeight = FontWeight.SemiBold)
                         }
 
                         SegmentedButton(
@@ -441,7 +438,7 @@ fun SettingsScreen(
                                 )
                             }
                         ) {
-                            Text("Телефон папы", fontWeight = FontWeight.SemiBold)
+                            Text("Устройство родителя", fontWeight = FontWeight.SemiBold)
                         }
                     }
 
@@ -449,14 +446,14 @@ fun SettingsScreen(
 
                     if (selectedTab == "CLIENT") {
                         Text(
-                            text = "Режим Алисы: только просмотр уроков и сбор рюкзака. Случайное изменение расписания отключено.",
+                            text = "Режим ребёнка: только просмотр уроков и сбор рюкзака. Случайное изменение расписания отключено.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.secondary
                         )
                     } else {
                         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                             Text(
-                                text = "Режим папы активен: вам доступно полное редактирование расписания уроков и списков предметов.",
+                                text = "Режим родителя активен: вам доступно полное редактирование расписания уроков и списков предметов.",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.secondary
                             )
@@ -524,7 +521,7 @@ fun SettingsScreen(
                         onClick = { showFontSizeDialog = true }
                     )
 
-                    // Пункт: Смена пароля (только в режиме папы)
+                    // Пункт: Смена пароля (только в режиме родителя)
                     if (selectedTab == "SERVER") {
                         Box(
                             Modifier
@@ -535,7 +532,7 @@ fun SettingsScreen(
 
                         SettingsMenuItem(
                             icon = Icons.Filled.Lock,
-                            title = "Пароль режима папы",
+                            title = "Пароль режима родителя",
                             subtitle = "Защита доступа к редактированию",
                             badge = "Сменить",
                             onClick = { showChangePinDialog = true }
@@ -723,7 +720,7 @@ private fun SettingsMenuItem(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Диалог смены пароля режима папы
+// Диалог смены пароля режима родителя
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
@@ -741,13 +738,13 @@ private fun ChangePinDialog(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(Icons.Filled.Lock, contentDescription = null, modifier = Modifier.size(22.dp))
                 Spacer(Modifier.width(8.dp))
-                Text("Смена пароля папы")
+                Text("Смена пароля родителя")
             }
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
-                    text = "Задайте новый пароль для входа в режим редактирования:",
+                    text = "Задайте новый пароль для доступа к режиму родителя:",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.secondary
                 )

@@ -270,38 +270,44 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     // ─────────────────────────────────────────────────────────────────────────
 
     /**
-     * Разблокировать и переключить на «Телефон папы» по паролю.
+     * Разблокировать и переключить на «Устройство родителя» по паролю.
      * Если пароль верный → isAdminMode = true, роль SERVER, неограниченный режим.
      */
-    suspend fun switchToParentPhone(enteredPassword: String): Boolean {
+    suspend fun switchToParentDevice(enteredPassword: String): Boolean {
         if (!checkPin(enteredPassword)) return false
         _isAdminMode.value = true
         _deviceRole.value = "SERVER"
         dataStore.saveRole("SERVER")
         restartSyncService()
-        _syncStatus.value = "Режим папы (сервер) ✓"
+        _syncStatus.value = "Режим родителя (сервер) ✓"
         return true
     }
 
+    /** Совместимость */
+    suspend fun switchToParentPhone(enteredPassword: String): Boolean = switchToParentDevice(enteredPassword)
+
     /**
-     * Переключить на «Планшет Алисы» (CLIENT).
+     * Переключить на «Устройство ребёнка» (CLIENT).
      * Пароль не требуется.
      */
-    fun switchToAliceTablet() {
+    fun switchToChildDevice() {
         _isAdminMode.value = false
         _deviceRole.value = "CLIENT"
         viewModelScope.launch {
             dataStore.saveRole("CLIENT")
             restartSyncService()
-            _syncStatus.value = "Поиск телефона папы..."
+            _syncStatus.value = "Поиск устройства родителя..."
         }
     }
 
-    /** Совместимость со старым вызовом */
-    suspend fun switchToAdminMode(enteredPin: String): Boolean = switchToParentPhone(enteredPin)
+    /** Совместимость */
+    fun switchToAliceTablet() = switchToChildDevice()
 
     /** Совместимость со старым вызовом */
-    fun exitAdminMode() = switchToAliceTablet()
+    suspend fun switchToAdminMode(enteredPin: String): Boolean = switchToParentDevice(enteredPin)
+
+    /** Совместимость со старым вызовом */
+    fun exitAdminMode() = switchToChildDevice()
 
     // BroadcastReceiver — слушает обновления и ошибки от SyncService
     private val scheduleUpdateReceiver = object : BroadcastReceiver() {
@@ -460,7 +466,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             Log.e("MainViewModel", "Failed to start SyncService: ${e.message}", e)
         }
         val role = _deviceRole.value
-        _syncStatus.value = if (role == "SERVER") "Сервер запущен ✓" else "Поиск телефона папы..."
+        _syncStatus.value = if (role == "SERVER") "Сервер запущен ✓" else "Поиск устройства родителя..."
     }
 
     fun startSyncService() = restartSyncService()
