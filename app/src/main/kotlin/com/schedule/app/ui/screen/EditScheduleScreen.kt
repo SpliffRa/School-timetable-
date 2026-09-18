@@ -176,6 +176,14 @@ fun EditScheduleScreen(
     var showAddDay    by remember { mutableStateOf(false) }
     var editingLesson by remember { mutableStateOf<Pair<String, Lesson?>?>(null) }  // (dayName, lesson|null)
 
+    BackHandler {
+        when {
+            editingLesson != null -> editingLesson = null
+            showAddDay -> showAddDay = false
+            else -> onNavigateBack()
+        }
+    }
+
     Box(modifier = Modifier.fillMaxSize()) {
         // ── Scaffold ──────────────────────────────────────────────────────────
         Scaffold(

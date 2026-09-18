@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.isSystemInDarkTheme
@@ -136,6 +137,17 @@ fun SettingsScreen(
                 passwordDialogError = false
             }
         )
+    }
+
+    BackHandler {
+        when {
+            showImportDialog -> showImportDialog = false
+            showPasswordDialog -> {
+                showPasswordDialog = false
+                passwordDialogError = false
+            }
+            else -> onNavigateBack()
+        }
     }
 
     Scaffold(

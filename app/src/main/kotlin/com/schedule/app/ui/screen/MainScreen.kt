@@ -1,5 +1,8 @@
 package com.schedule.app.ui.screen
 
+import android.app.Activity
+import android.widget.Toast
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -56,6 +59,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -66,6 +70,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.rotate
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -119,6 +124,9 @@ private val WEEK_DAYS_SHORT = listOf("Пн", "Вт", "Ср", "Чт", "Пт", "С
 private fun todayIndex(): Int = LocalDate.now().dayOfWeek.value - 1
 private fun tomorrowIndex(): Int = LocalDate.now().dayOfWeek.value % 7
 
+// Шаг в истории навигации по расписанию
+private data class NavStep(val tab: Int, val dayIdx: Int)
+
 // ─────────────────────────────────────────────────────────────────────────────
 // MainScreen
 // ─────────────────────────────────────────────────────────────────────────────
@@ -140,6 +148,7 @@ fun MainScreen(
 
     val isDark = isSystemInDarkTheme()
     val isParentMode = isAdminMode || deviceRole == "SERVER"
+    val context = LocalContext.current
 
     val tabs = listOf("День", "Неделя", "Месяц")
     var selectedTab by remember { mutableStateOf(0) }
@@ -147,6 +156,57 @@ fun MainScreen(
     var currentMonth by remember { mutableStateOf(YearMonth.now()) }
 
     var showFontSizeDialog by remember { mutableStateOf(false) }
+
+    // История переходов (вкладка + день)
+    val navHistory = remember { mutableStateListOf(NavStep(tab = 0, dayIdx = selectedDayIdx)) }
+
+    // Список раскрытых уроков (номера)
+    val expandedLessons = remember(selectedDayIdx, selectedTab) { mutableStateListOf<Int>() }
+
+    var lastBackPressTime by remember { mutableStateOf(0L) }
+
+    fun navigateTo(tab: Int, dayIdx: Int) {
+        if (selectedTab != tab || selectedDayIdx != dayIdx) {
+            selectedTab = tab
+            selectedDayIdx = dayIdx
+            navHistory.add(NavStep(tab, dayIdx))
+        }
+    }
+
+    // ── Пошаговая обработка кнопки «Назад» ──────────────────────────────────
+    BackHandler {
+        when {
+            // 1. Если открыт диалог шрифта — закрываем его
+            showFontSizeDialog -> {
+                showFontSizeDialog = false
+            }
+            // 2. Если открыт чек-лист какого-либо урока — сворачиваем его
+            expandedLessons.isNotEmpty() -> {
+                expandedLessons.removeAt(expandedLessons.lastIndex)
+            }
+            // 3. Если есть история переходов (например, перешли с Дня на Неделю или выбрали другой день) — делаем шаг назад
+            navHistory.size > 1 -> {
+                navHistory.removeAt(navHistory.lastIndex)
+                val prev = navHistory.last()
+                selectedTab = prev.tab
+                selectedDayIdx = prev.dayIdx
+            }
+            // 4. Если мы на неделе или месяце без истории — возвращаемся на День
+            selectedTab != 0 -> {
+                selectedTab = 0
+            }
+            // 5. Если мы на начальном экране — защита от случайного закрытия (двойное нажатие)
+            else -> {
+                val now = System.currentTimeMillis()
+                if (now - lastBackPressTime < 2000L) {
+                    (context as? Activity)?.finish()
+                } else {
+                    lastBackPressTime = now
+                    Toast.makeText(context, "Нажмите назад ещё раз для выхода", Toast.LENGTH_SHORT).show()
+                }
+            }
+        }
+    }
 
     if (showFontSizeDialog) {
         FontSizeSelectorDialog(
@@ -266,11 +326,13 @@ fun MainScreen(
                     }
                 }
 
-                // Apple Segmented Control (адаптирован под темную/светлую тему)
+                // Apple Segmented Control
                 AppleSegmentedControl(
                     items = tabs,
                     selectedIndex = selectedTab,
-                    onItemSelected = { selectedTab = it },
+                    onItemSelected = { newTab ->
+                        navigateTo(tab = newTab, dayIdx = selectedDayIdx)
+                    },
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
                 )
             }
@@ -328,15 +390,15 @@ fun MainScreen(
                     0 -> DayView(
                         schedule = state.schedule,
                         selectedDayIdx = selectedDayIdx,
-                        onPrev = { if (selectedDayIdx > 0) selectedDayIdx-- },
-                        onNext = { if (selectedDayIdx < WEEK_DAYS.size - 1) selectedDayIdx++ }
+                        expandedLessons = expandedLessons,
+                        onPrev = { if (selectedDayIdx > 0) navigateTo(0, selectedDayIdx - 1) },
+                        onNext = { if (selectedDayIdx < WEEK_DAYS.size - 1) navigateTo(0, selectedDayIdx + 1) }
                     )
                     1 -> WeekView(
                         schedule = state.schedule,
                         todayIdx = todayIndex(),
                         onDayClick = { idx ->
-                            selectedDayIdx = idx
-                            selectedTab = 0
+                            navigateTo(tab = 0, dayIdx = idx)
                         }
                     )
                     2 -> MonthView(
@@ -345,8 +407,8 @@ fun MainScreen(
                         onPrevMonth = { currentMonth = currentMonth.minusMonths(1) },
                         onNextMonth = { currentMonth = currentMonth.plusMonths(1) },
                         onDayClick = { weekDayIdx ->
-                            selectedDayIdx = weekDayIdx.coerceIn(0, WEEK_DAYS.size - 1)
-                            selectedTab = 0
+                            val safeIdx = weekDayIdx.coerceIn(0, WEEK_DAYS.size - 1)
+                            navigateTo(tab = 0, dayIdx = safeIdx)
                         }
                     )
                 }
@@ -903,6 +965,7 @@ private fun BackpackSummaryCard(
 private fun DayView(
     schedule: Schedule,
     selectedDayIdx: Int,
+    expandedLessons: MutableList<Int>,
     onPrev: () -> Unit,
     onNext: () -> Unit
 ) {
@@ -967,8 +1030,17 @@ private fun DayView(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 items(lessons, key = { it.number }) { lesson ->
+                    val isExpanded = expandedLessons.contains(lesson.number)
                     LessonExpandableCard(
                         lesson = lesson,
+                        isExpanded = isExpanded,
+                        onToggleExpand = {
+                            if (isExpanded) {
+                                expandedLessons.remove(lesson.number)
+                            } else {
+                                expandedLessons.add(lesson.number)
+                            }
+                        },
                         isItemChecked = { item -> checkedState["${lesson.number}_$item"] ?: false },
                         onToggleItem = { item ->
                             val key = "${lesson.number}_$item"
@@ -983,19 +1055,20 @@ private fun DayView(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Карточка урока с контрастным чек-листом
+// Карточка урока с контролируемым раскрытием (BackHandler-friendly)
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
 private fun LessonExpandableCard(
     lesson: Lesson,
+    isExpanded: Boolean,
+    onToggleExpand: () -> Unit,
     isItemChecked: (String) -> Boolean,
     onToggleItem: (String) -> Unit
 ) {
-    var expanded by remember { mutableStateOf(false) }
     val isDark = isSystemInDarkTheme()
     val rotation by animateFloatAsState(
-        targetValue = if (expanded) 180f else 0f,
+        targetValue = if (isExpanded) 180f else 0f,
         animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
         label = "arrow"
     )
@@ -1020,7 +1093,7 @@ private fun LessonExpandableCard(
                     .clip(RoundedCornerShape(20.dp))
                     .clickable(enabled = totalItems > 0) {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                        expanded = !expanded
+                        onToggleExpand()
                     }
                     .padding(14.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -1108,7 +1181,7 @@ private fun LessonExpandableCard(
 
                     Icon(
                         imageVector = Icons.Filled.ExpandMore,
-                        contentDescription = if (expanded) "Свернуть" else "Развернуть",
+                        contentDescription = if (isExpanded) "Свернуть" else "Развернуть",
                         tint = MaterialTheme.colorScheme.secondary,
                         modifier = Modifier
                             .size(22.dp)
@@ -1119,7 +1192,7 @@ private fun LessonExpandableCard(
 
             // ── Раскрывающийся список «Что взять» с четким контрастом ───────────
             AnimatedVisibility(
-                visible = expanded,
+                visible = isExpanded,
                 enter = expandVertically(spring(stiffness = Spring.StiffnessLow)) + fadeIn(),
                 exit = shrinkVertically(spring(stiffness = Spring.StiffnessLow)) + fadeOut()
             ) {
