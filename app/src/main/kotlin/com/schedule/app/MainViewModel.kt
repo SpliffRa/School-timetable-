@@ -7,8 +7,10 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.os.Build
 import android.util.Log
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.schedule.app.data.excel.ScheduleExcelManager
 import com.schedule.app.data.model.Day
 import com.schedule.app.data.model.Lesson
 import com.schedule.app.data.model.Schedule
@@ -18,6 +20,7 @@ import com.schedule.app.data.network.AppUpdateNotificationHelper
 import com.schedule.app.data.network.CloudSync
 import com.schedule.app.data.network.SyncService
 import com.schedule.app.data.store.AppDataStore
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -26,6 +29,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
@@ -674,6 +678,34 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         } catch (e: Exception) {
             Log.e("MainViewModel", "Import schedule error: ${e.message}")
             false
+        }
+    }
+
+    /**
+     * Экспортирует текущее расписание в файл Excel (.xlsx) и открывает системное меню «Поделиться».
+     */
+    fun shareExcelSchedule(context: Context) {
+        val current = (_uiState.value as? UiState.Success)?.schedule ?: createDefaultSchedule()
+        val file = ScheduleExcelManager.exportToExcelFile(context, current)
+        ScheduleExcelManager.shareExcelFile(context, file)
+    }
+
+    /**
+     * Импортирует расписание из выбранного файла Excel (.xlsx или .csv).
+     */
+    fun importScheduleFromExcel(context: Context, uri: Uri, onResult: (Result<Int>) -> Unit) {
+        viewModelScope.launch {
+            val parseResult = withContext(Dispatchers.IO) {
+                ScheduleExcelManager.importFromExcelOrCsv(context, uri)
+            }
+            if (parseResult.isSuccess) {
+                val newSchedule = parseResult.getOrThrow()
+                saveSchedule(newSchedule)
+                val totalLessons = newSchedule.days.sumOf { it.lessons.size }
+                onResult(Result.success(totalLessons))
+            } else {
+                onResult(Result.failure(parseResult.exceptionOrNull() ?: Exception("Ошибка импорта файла")))
+            }
         }
     }
 

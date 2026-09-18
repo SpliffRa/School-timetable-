@@ -1,7 +1,11 @@
 package com.schedule.app.ui.screen
 
 import android.content.Intent
+import android.net.Uri
+import android.widget.Toast
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -544,6 +548,25 @@ fun SettingsScreen(
             // ═════════════════════════════════════════════════════════════════
             // 4. СЕКЦИЯ: РЕЗЕРВНАЯ КОПИЯ И ЭКСПОРТ (ОФЛАЙН)
             // ═════════════════════════════════════════════════════════════════
+            // ═════════════════════════════════════════════════════════════════
+            // 4. СЕКЦИЯ: ЭКСПОРТ И ИМПОРТ РАСПИСАНИЯ (EXCEL И ОФЛАЙН)
+            // ═════════════════════════════════════════════════════════════════
+            val excelPickerLauncher = rememberLauncherForActivityResult(
+                contract = ActivityResultContracts.OpenDocument()
+            ) { uri: Uri? ->
+                if (uri != null) {
+                    viewModel.importScheduleFromExcel(context, uri) { result ->
+                        if (result.isSuccess) {
+                            val count = result.getOrNull() ?: 0
+                            Toast.makeText(context, "Импортировано $count уроков из Excel ✓", Toast.LENGTH_LONG).show()
+                        } else {
+                            val err = result.exceptionOrNull()?.message ?: "Ошибка импорта таблицы"
+                            Toast.makeText(context, err, Toast.LENGTH_LONG).show()
+                        }
+                    }
+                }
+            }
+
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(20.dp),
@@ -551,21 +574,84 @@ fun SettingsScreen(
                 border = BorderStroke(1.dp, if (isDark) Color(0xFF2B303E) else Color(0xFFE2E6EF))
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
-                    Text(
-                        text = "Офлайн-передача расписания",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.onSurface
-                    )
-                    Spacer(Modifier.height(4.dp))
-                    Text(
-                        text = "Если нет интернета, можно передать расписание файлом через Telegram, WhatsApp или Bluetooth.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.secondary
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (isDark) Color(0xFF1E3A2B) else Color(0xFFE6F4EA),
+                            modifier = Modifier.size(32.dp)
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Icon(
+                                    Icons.Filled.CloudDownload,
+                                    contentDescription = null,
+                                    tint = if (isDark) Color(0xFF81C995) else Color(0xFF137333),
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        }
+                        Spacer(Modifier.width(10.dp))
+                        Column {
+                            Text(
+                                text = "Экспорт и импорт в Excel",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onSurface
+                            )
+                            Text(
+                                text = "Таблица расписания уроков (.xlsx / .csv)",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.secondary
+                            )
+                        }
+                    }
 
-                    Spacer(Modifier.height(12.dp))
+                    Spacer(Modifier.height(14.dp))
 
+                    // Кнопки Excel
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Button(
+                            onClick = {
+                                viewModel.shareExcelSchedule(context)
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isDark) Color(0xFF137333) else Color(0xFF1E8E3E)
+                            )
+                        ) {
+                            Icon(Icons.Filled.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("В Excel", fontWeight = FontWeight.Bold)
+                        }
+
+                        Button(
+                            onClick = {
+                                excelPickerLauncher.launch(arrayOf(
+                                    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                    "application/vnd.ms-excel",
+                                    "text/csv",
+                                    "text/comma-separated-values",
+                                    "*/*"
+                                ))
+                            },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(
+                                containerColor = if (isDark) Color(0xFF2A52BE) else Color(0xFF386BEE)
+                            )
+                        ) {
+                            Icon(Icons.Filled.FileUpload, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Из Excel", fontWeight = FontWeight.Bold)
+                        }
+                    }
+
+                    Spacer(Modifier.height(10.dp))
+
+                    // Текстовая передача (JSON)
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -578,14 +664,14 @@ fun SettingsScreen(
                                     putExtra(Intent.EXTRA_TEXT, jsonString)
                                     type = "text/plain"
                                 }
-                                context.startActivity(Intent.createChooser(sendIntent, "Поделиться расписанием"))
+                                context.startActivity(Intent.createChooser(sendIntent, "Поделиться текстом"))
                             },
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(12.dp)
                         ) {
-                            Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text("Поделиться")
+                            Text("Текст (Share)", style = MaterialTheme.typography.bodySmall)
                         }
 
                         OutlinedButton(
@@ -597,9 +683,9 @@ fun SettingsScreen(
                             modifier = Modifier.weight(1f),
                             shape = RoundedCornerShape(12.dp)
                         ) {
-                            Icon(Icons.Filled.FileUpload, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Icon(Icons.Filled.Edit, contentDescription = null, modifier = Modifier.size(16.dp))
                             Spacer(Modifier.width(6.dp))
-                            Text("Импорт")
+                            Text("Вставить текст", style = MaterialTheme.typography.bodySmall)
                         }
                     }
                 }
