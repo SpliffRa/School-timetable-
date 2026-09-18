@@ -672,7 +672,7 @@ fun SettingsScreen(
 
             // Версия
             Text(
-                text = "Версия 2.4 • Apple UI Design",
+                text = "Версия ${BuildConfig.VERSION_NAME} • Apple UI Design",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.7f),
                 modifier = Modifier.align(Alignment.CenterHorizontally)

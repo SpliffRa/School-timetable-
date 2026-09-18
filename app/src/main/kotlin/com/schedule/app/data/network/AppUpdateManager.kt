@@ -146,6 +146,13 @@ object AppUpdateManager {
         onProgress: (progress: Float, downloadedBytes: Long, totalBytes: Long) -> Unit
     ): Result<File> = withContext(Dispatchers.IO) {
         try {
+            val cleanUrl = downloadUrl.trim()
+            if (cleanUrl.isBlank() || !cleanUrl.startsWith("http", ignoreCase = true)) {
+                return@withContext Result.failure(
+                    Exception("Ссылка на APK пуста или некорректна. Укажите прямой URL в настройках публикации.")
+                )
+            }
+
             val destinationDir = context.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS)
                 ?: context.cacheDir
             val apkFile = File(destinationDir, targetFileName)
@@ -153,9 +160,12 @@ object AppUpdateManager {
                 apkFile.delete()
             }
 
-            downloadClient.prepareGet(downloadUrl).execute { httpResponse ->
+            downloadClient.prepareGet(cleanUrl).execute { httpResponse ->
+                if (httpResponse.status == HttpStatusCode.NotFound) {
+                    throw Exception("Файл обновления не найден на сервере (HTTP 404). Проверьте правильность ссылки на APK.")
+                }
                 if (!httpResponse.status.isSuccess()) {
-                    throw Exception("Ошибка скачивания: HTTP ${httpResponse.status.value}")
+                    throw Exception("Ошибка скачивания: HTTP ${httpResponse.status.value} (${httpResponse.status.description})")
                 }
 
                 val contentLength = httpResponse.headers["Content-Length"]?.toLongOrNull() ?: -1L
