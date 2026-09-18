@@ -418,7 +418,7 @@ fun SettingsScreen(
                                 )
                             }
                         ) {
-                            Text("Устройство ребёнка", fontWeight = FontWeight.SemiBold)
+                            Text("Ребёнок", fontWeight = FontWeight.SemiBold)
                         }
 
                         SegmentedButton(
@@ -438,7 +438,7 @@ fun SettingsScreen(
                                 )
                             }
                         ) {
-                            Text("Устройство родителя", fontWeight = FontWeight.SemiBold)
+                            Text("Родитель", fontWeight = FontWeight.SemiBold)
                         }
                     }
 
