@@ -12,6 +12,8 @@ import androidx.lifecycle.viewModelScope
 import com.schedule.app.data.model.Day
 import com.schedule.app.data.model.Lesson
 import com.schedule.app.data.model.Schedule
+import com.schedule.app.data.network.AppUpdateInfo
+import com.schedule.app.data.network.AppUpdateManager
 import com.schedule.app.data.network.CloudSync
 import com.schedule.app.data.network.SyncService
 import com.schedule.app.data.store.AppDataStore
@@ -25,6 +27,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import java.io.File
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
@@ -49,6 +52,25 @@ sealed class UiState {
 // ---------------------------------------------------------------------------
 
 enum class SyncState { IDLE, SYNCING, SUCCESS, ERROR }
+
+// ---------------------------------------------------------------------------
+// Update State — состояние проверки и установки обновлений приложения через облако
+// ---------------------------------------------------------------------------
+
+sealed class UpdateUiState {
+    data object Idle : UpdateUiState()
+    data object Checking : UpdateUiState()
+    data object UpToDate : UpdateUiState()
+    data class UpdateAvailable(val info: AppUpdateInfo) : UpdateUiState()
+    data class Downloading(
+        val info: AppUpdateInfo,
+        val progress: Float,
+        val downloadedBytes: Long,
+        val totalBytes: Long
+    ) : UpdateUiState()
+    data class ReadyToInstall(val info: AppUpdateInfo, val apkFile: File) : UpdateUiState()
+    data class Error(val message: String) : UpdateUiState()
+}
 
 // ---------------------------------------------------------------------------
 // ViewModel
@@ -107,6 +129,109 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun saveSyncCode(code: String) {
         viewModelScope.launch {
             dataStore.saveSyncCode(code)
+        }
+    }
+
+    /** Состояние проверки и загрузки обновлений приложения через облако */
+    private val _updateState = MutableStateFlow<UpdateUiState>(UpdateUiState.Idle)
+    val updateState: StateFlow<UpdateUiState> = _updateState.asStateFlow()
+
+    /** Баннер доступного обновления (если найдено при тихой проверке) */
+    private val _availableUpdateBanner = MutableStateFlow<AppUpdateInfo?>(null)
+    val availableUpdateBanner: StateFlow<AppUpdateInfo?> = _availableUpdateBanner.asStateFlow()
+
+    /**
+     * Проверяет наличие обновления в облаке.
+     * @param isManual true если вызвано по нажатию пользователем (показывает диалог и индикатор)
+     */
+    fun checkForUpdates(isManual: Boolean = true) {
+        viewModelScope.launch {
+            if (isManual) {
+                _updateState.value = UpdateUiState.Checking
+            }
+            val result = AppUpdateManager.checkForUpdate()
+            if (result.isSuccess) {
+                val updateInfo = result.getOrNull()
+                if (updateInfo != null) {
+                    _availableUpdateBanner.value = updateInfo
+                    if (isManual) {
+                        _updateState.value = UpdateUiState.UpdateAvailable(updateInfo)
+                    }
+                } else {
+                    _availableUpdateBanner.value = null
+                    if (isManual) {
+                        _updateState.value = UpdateUiState.UpToDate
+                    }
+                }
+            } else {
+                if (isManual) {
+                    val err = result.exceptionOrNull()?.message ?: "Не удалось проверить обновления"
+                    _updateState.value = UpdateUiState.Error(err)
+                }
+            }
+        }
+    }
+
+    /**
+     * Скачивает APK-файл из облака и сразу запускает установщик пакетов Android.
+     */
+    fun startDownloadAndInstall(context: Context, info: AppUpdateInfo) {
+        viewModelScope.launch {
+            _updateState.value = UpdateUiState.Downloading(
+                info = info,
+                progress = 0f,
+                downloadedBytes = 0L,
+                totalBytes = -1L
+            )
+
+            val downloadResult = AppUpdateManager.downloadApk(
+                context = context,
+                downloadUrl = info.downloadUrl,
+                targetFileName = "school_update_${info.versionCode}.apk"
+            ) { progress, downloaded, total ->
+                _updateState.value = UpdateUiState.Downloading(
+                    info = info,
+                    progress = progress,
+                    downloadedBytes = downloaded,
+                    totalBytes = total
+                )
+            }
+
+            if (downloadResult.isSuccess) {
+                val apkFile = downloadResult.getOrThrow()
+                _updateState.value = UpdateUiState.ReadyToInstall(info, apkFile)
+                AppUpdateManager.installApk(context, apkFile)
+            } else {
+                val err = downloadResult.exceptionOrNull()?.message ?: "Ошибка скачивания APK"
+                _updateState.value = UpdateUiState.Error(err)
+            }
+        }
+    }
+
+    /**
+     * Повторная попытка запуска установки уже скачанного файла APK
+     */
+    fun installDownloadedApk(context: Context, apkFile: File) {
+        AppUpdateManager.installApk(context, apkFile)
+    }
+
+    /**
+     * Закрывает диалог обновления
+     */
+    fun dismissUpdateDialog() {
+        _updateState.value = UpdateUiState.Idle
+    }
+
+    /**
+     * Публикует новое обновление приложения в облако (для телефона папы / разработчика).
+     */
+    fun publishUpdateToCloud(info: AppUpdateInfo, onDone: (Boolean) -> Unit) {
+        viewModelScope.launch {
+            val res = AppUpdateManager.publishUpdate(info)
+            onDone(res.isSuccess)
+            if (res.isSuccess) {
+                checkForUpdates(isManual = false)
+            }
         }
     }
 
@@ -433,6 +558,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun onAppForegrounded() {
         periodicSyncJob?.cancel()
         periodicSyncJob = viewModelScope.launch {
+            // Тихо проверяем наличие обновлений приложения в облаке при открытии
+            launch { checkForUpdates(isManual = false) }
+
             while (isActive) {
                 checkSyncUpdateSilently()
                 delay(60_000L) // 1 минута

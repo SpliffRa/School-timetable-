@@ -26,6 +26,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.BrightnessAuto
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FileUpload
@@ -34,13 +35,16 @@ import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.TabletAndroid
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
@@ -70,7 +74,10 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.schedule.app.BuildConfig
 import com.schedule.app.MainViewModel
+import com.schedule.app.UpdateUiState
+import com.schedule.app.data.network.AppUpdateInfo
 import com.schedule.app.ui.theme.Accent
 import com.schedule.app.ui.theme.AccentDark
 import com.schedule.app.ui.theme.InnerBoxDarkBg
@@ -81,6 +88,7 @@ import com.schedule.app.ui.theme.LocalIsDarkTheme
 import com.schedule.app.ui.theme.SuccessMint
 import com.schedule.app.ui.theme.SuccessMintBright
 import kotlinx.coroutines.launch
+import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -93,6 +101,9 @@ fun SettingsScreen(
     val currentSyncCode by viewModel.syncCodeFlow().collectAsStateWithLifecycle(initialValue = "Алиса-2026")
     val fontScale by viewModel.fontScaleFlow().collectAsStateWithLifecycle(initialValue = 1.0f)
     val themeMode by viewModel.themeModeFlow().collectAsStateWithLifecycle(initialValue = "SYSTEM")
+
+    val updateState by viewModel.updateState.collectAsStateWithLifecycle()
+    val availableUpdateBanner by viewModel.availableUpdateBanner.collectAsStateWithLifecycle()
 
     val isDark = LocalIsDarkTheme.current
     val context = LocalContext.current
@@ -109,12 +120,15 @@ fun SettingsScreen(
     var passwordDialogError by remember { mutableStateOf(false) }
     var showChangePinDialog by remember { mutableStateOf(false) }
     var showImportDialog by remember { mutableStateOf(false) }
+    var showPublishUpdateDialog by remember { mutableStateOf(false) }
     var importText by remember { mutableStateOf("") }
     var importError by remember { mutableStateOf(false) }
 
     // Пошаговая кнопка «Назад»
     BackHandler {
         when {
+            updateState !is UpdateUiState.Idle -> viewModel.dismissUpdateDialog()
+            showPublishUpdateDialog -> showPublishUpdateDialog = false
             showThemeDialog -> showThemeDialog = false
             showFontSizeDialog -> showFontSizeDialog = false
             showChangePinDialog -> showChangePinDialog = false
@@ -182,6 +196,28 @@ fun SettingsScreen(
                 showThemeDialog = false
             },
             onDismiss = { showThemeDialog = false }
+        )
+    }
+
+    // Диалог проверки и скачивания обновлений приложения
+    if (updateState !is UpdateUiState.Idle) {
+        AppUpdateDialog(
+            updateState = updateState,
+            onDownloadAndInstall = { info -> viewModel.startDownloadAndInstall(context, info) },
+            onInstallDownloaded = { apkFile -> viewModel.installDownloadedApk(context, apkFile) },
+            onDismiss = { viewModel.dismissUpdateDialog() }
+        )
+    }
+
+    // Диалог публикации новой версии в облако (для режима папы)
+    if (showPublishUpdateDialog) {
+        PublishUpdateDialog(
+            onPublish = { info ->
+                viewModel.publishUpdateToCloud(info) {
+                    showPublishUpdateDialog = false
+                }
+            },
+            onDismiss = { showPublishUpdateDialog = false }
         )
     }
 
@@ -595,6 +631,43 @@ fun SettingsScreen(
                 }
             }
 
+            // ═════════════════════════════════════════════════════════════════
+            // 5. СЕКЦИЯ: ОБНОВЛЕНИЕ ПРИЛОЖЕНИЯ (ОБЛАЧНОЕ OTA)
+            // ═════════════════════════════════════════════════════════════════
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(20.dp),
+                color = MaterialTheme.colorScheme.surface,
+                border = BorderStroke(1.dp, if (isDark) Color(0xFF2B303E) else Color(0xFFE2E6EF))
+            ) {
+                Column {
+                    SettingsMenuItem(
+                        icon = Icons.Filled.SystemUpdate,
+                        title = "Обновление приложения",
+                        subtitle = "Текущая версия v${BuildConfig.VERSION_NAME}",
+                        badge = if (availableUpdateBanner != null) "Есть v${availableUpdateBanner?.versionName}!" else "Проверить",
+                        onClick = { viewModel.checkForUpdates(isManual = true) }
+                    )
+
+                    if (selectedTab == "SERVER") {
+                        Box(
+                            Modifier
+                                .fillMaxWidth()
+                                .height(1.dp)
+                                .background(if (isDark) Color(0xFF2B303E) else Color(0xFFE8ECF4))
+                        )
+
+                        SettingsMenuItem(
+                            icon = Icons.Filled.CloudDownload,
+                            title = "Опубликовать версию в облако",
+                            subtitle = "Выпустить новую версию для планшетов семьи",
+                            badge = "Облако",
+                            onClick = { showPublishUpdateDialog = true }
+                        )
+                    }
+                }
+            }
+
             Spacer(Modifier.height(8.dp))
 
             // Версия
@@ -968,6 +1041,335 @@ fun ThemeSelectorDialog(
         dismissButton = {
             TextButton(onClick = onDismiss) {
                 Text("Закрыть")
+            }
+        }
+    )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Диалог проверки и загрузки обновлений приложения (OTA In-App Updates)
+// ─────────────────────────────────────────────────────────────────────────────
+
+@Composable
+fun AppUpdateDialog(
+    updateState: UpdateUiState,
+    onDownloadAndInstall: (AppUpdateInfo) -> Unit,
+    onInstallDownloaded: (File) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val isDark = LocalIsDarkTheme.current
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = when (updateState) {
+                        is UpdateUiState.Downloading -> Icons.Filled.CloudDownload
+                        is UpdateUiState.ReadyToInstall -> Icons.Filled.Check
+                        is UpdateUiState.Error -> Icons.Filled.Cloud
+                        else -> Icons.Filled.SystemUpdate
+                    },
+                    contentDescription = null,
+                    tint = if (isDark) AccentDark else Accent,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    text = when (updateState) {
+                        is UpdateUiState.Checking -> "Проверка обновлений..."
+                        is UpdateUiState.UpToDate -> "Актуальная версия ✓"
+                        is UpdateUiState.UpdateAvailable -> "Доступно обновление 🚀"
+                        is UpdateUiState.Downloading -> "Загрузка обновления..."
+                        is UpdateUiState.ReadyToInstall -> "Готово к установке ✓"
+                        is UpdateUiState.Error -> "Ошибка обновления"
+                        else -> "Обновление приложения"
+                    },
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                when (updateState) {
+                    is UpdateUiState.Checking -> {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.padding(vertical = 12.dp)
+                        ) {
+                            CircularProgressIndicator(modifier = Modifier.size(26.dp))
+                            Spacer(Modifier.width(14.dp))
+                            Text(
+                                "Связываемся с облаком...",
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                    }
+
+                    is UpdateUiState.UpToDate -> {
+                        Text(
+                            text = "У вас установлена последняя версия приложения (v${BuildConfig.VERSION_NAME}).",
+                            style = MaterialTheme.typography.bodyMedium
+                        )
+                        Text(
+                            text = "Приложение автоматически проверяет наличие новых версий в облаке.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
+                    }
+
+                    is UpdateUiState.UpdateAvailable -> {
+                        val info = updateState.info
+                        Text(
+                            text = "Новая версия: v${info.versionName} (сборка ${info.versionCode})",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isDark) AccentDark else Accent
+                        )
+                        if (info.releaseDate.isNotBlank()) {
+                            Text(
+                                text = "Дата выпуска: ${info.releaseDate}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.secondary
+                            )
+                        }
+                        if (info.releaseNotes.isNotBlank()) {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (isDark) Color(0xFF242834) else Color(0xFFF3F5FA),
+                                border = BorderStroke(1.dp, if (isDark) Color(0xFF333A4A) else Color(0xFFE2E6EF)),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(12.dp)) {
+                                    Text(
+                                        text = "Что нового:",
+                                        style = MaterialTheme.typography.labelMedium,
+                                        fontWeight = FontWeight.Bold
+                                    )
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(
+                                        text = info.releaseNotes,
+                                        style = MaterialTheme.typography.bodySmall
+                                    )
+                                }
+                            }
+                        }
+                        Text(
+                            text = "Нажмите кнопку ниже для загрузки и автоматической установки.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
+                    }
+
+                    is UpdateUiState.Downloading -> {
+                        val progress = updateState.progress
+                        val downloadedMb = updateState.downloadedBytes / (1024f * 1024f)
+                        val totalMb = if (updateState.totalBytes > 0) updateState.totalBytes / (1024f * 1024f) else 0f
+
+                        Spacer(Modifier.height(4.dp))
+                        if (progress >= 0f) {
+                            LinearProgressIndicator(
+                                progress = { progress },
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(10.dp)
+                                    .clip(RoundedCornerShape(5.dp))
+                            )
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween
+                            ) {
+                                Text(
+                                    text = "${(progress * 100).toInt()}%",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isDark) AccentDark else Accent
+                                )
+                                Text(
+                                    text = "%.1f / %.1f МБ".format(downloadedMb, totalMb),
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.secondary
+                                )
+                            }
+                        } else {
+                            LinearProgressIndicator(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(10.dp)
+                                    .clip(RoundedCornerShape(5.dp))
+                            )
+                            Text(
+                                text = "Загружено: %.1f МБ".format(downloadedMb),
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        }
+
+                        Spacer(Modifier.height(4.dp))
+                        Text(
+                            text = "По завершении загрузки автоматически откроется системное окно обновления приложения.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
+                    }
+
+                    is UpdateUiState.ReadyToInstall -> {
+                        Text(
+                            text = "Обновление успешно скачано и готово к установке.",
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium
+                        )
+                        Text(
+                            text = "Если окно установки не открылось автоматически, нажмите кнопку «Установить».",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.secondary
+                        )
+                    }
+
+                    is UpdateUiState.Error -> {
+                        Text(
+                            text = updateState.message,
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.error
+                        )
+                    }
+
+                    else -> {}
+                }
+            }
+        },
+        confirmButton = {
+            when (updateState) {
+                is UpdateUiState.UpdateAvailable -> {
+                    Button(onClick = { onDownloadAndInstall(updateState.info) }) {
+                        Icon(Icons.Filled.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Скачать и обновить")
+                    }
+                }
+                is UpdateUiState.ReadyToInstall -> {
+                    Button(onClick = { onInstallDownloaded(updateState.apkFile) }) {
+                        Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(18.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text("Установить")
+                    }
+                }
+                is UpdateUiState.UpToDate -> {
+                    Button(onClick = onDismiss) {
+                        Text("Отлично")
+                    }
+                }
+                is UpdateUiState.Error -> {
+                    Button(onClick = onDismiss) {
+                        Text("Понятно")
+                    }
+                }
+                else -> {}
+            }
+        },
+        dismissButton = {
+            if (updateState !is UpdateUiState.Downloading) {
+                TextButton(onClick = onDismiss) {
+                    Text("Закрыть")
+                }
+            }
+        }
+    )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Диалог публикации новой версии APK в облако (для режима папы)
+// ─────────────────────────────────────────────────────────────────────────────
+
+@Composable
+fun PublishUpdateDialog(
+    onPublish: (AppUpdateInfo) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var versionName by remember { mutableStateOf("2.5") }
+    var versionCode by remember { mutableStateOf("25") }
+    var downloadUrl by remember { mutableStateOf("") }
+    var releaseNotes by remember { mutableStateOf("Новые функции и оптимизация расписания") }
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.CloudDownload, contentDescription = null, modifier = Modifier.size(24.dp))
+                Spacer(Modifier.width(8.dp))
+                Text("Публикация в облако")
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    text = "Укажите данные о новой версии. Все устройства семьи получат предложение обновиться:",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.secondary
+                )
+
+                OutlinedTextField(
+                    value = versionName,
+                    onValueChange = { versionName = it },
+                    label = { Text("Версия (например, 2.5)") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                OutlinedTextField(
+                    value = versionCode,
+                    onValueChange = { if (it.all { ch -> ch.isDigit() }) versionCode = it },
+                    label = { Text("Код версии (например, 25)") },
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                OutlinedTextField(
+                    value = downloadUrl,
+                    onValueChange = { downloadUrl = it },
+                    label = { Text("Прямая ссылка на APK (URL)") },
+                    placeholder = { Text("https://...") },
+                    singleLine = true,
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                OutlinedTextField(
+                    value = releaseNotes,
+                    onValueChange = { releaseNotes = it },
+                    label = { Text("Список изменений") },
+                    maxLines = 3,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val code = versionCode.toIntOrNull() ?: (BuildConfig.VERSION_CODE + 1)
+                    val info = AppUpdateInfo(
+                        versionCode = code,
+                        versionName = versionName.trim().ifBlank { "2.5" },
+                        downloadUrl = downloadUrl.trim(),
+                        releaseNotes = releaseNotes.trim(),
+                        releaseDate = java.time.LocalDate.now().toString()
+                    )
+                    onPublish(info)
+                },
+                enabled = downloadUrl.isNotBlank()
+            ) {
+                Text("Опубликовать")
+            }
+        },
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Отмена")
             }
         }
     )

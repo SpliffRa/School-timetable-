@@ -237,5 +237,30 @@ class ScheduleLogicTest {
         assertFalse(remoteOlderVersion > lastKnownVersion)
         assertFalse(remoteSameVersion > lastKnownVersion)
     }
+
+    @Test
+    fun `test AppUpdateInfo serialization and version comparison`() {
+        val json = Json { ignoreUnknownKeys = true }
+        val rawJson = """
+            {
+                "versionCode": 25,
+                "versionName": "2.5",
+                "downloadUrl": "https://example.com/app.apk",
+                "releaseNotes": "Добавлены новые функции",
+                "releaseDate": "2026-09-18",
+                "forceUpdate": false
+            }
+        """.trimIndent()
+
+        val parsed = json.decodeFromString<com.schedule.app.data.network.AppUpdateInfo>(rawJson)
+        assertEquals(25, parsed.versionCode)
+        assertEquals("2.5", parsed.versionName)
+        assertEquals("https://example.com/app.apk", parsed.downloadUrl)
+        assertEquals("Добавлены новые функции", parsed.releaseNotes)
+
+        val currentVersion = 24
+        assertTrue("Version 25 must be detected as an update over 24", parsed.versionCode > currentVersion)
+        assertFalse("Version 24 must not trigger update", currentVersion > parsed.versionCode)
+    }
 }
 
