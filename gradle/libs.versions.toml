@@ -1,0 +1,52 @@
+[versions]
+agp = "9.4.0"
+kotlin = "2.2.10"
+compose-bom = "2024.09.03"
+ktor = "2.3.12"
+kotlinx-serialization = "1.7.3"
+datastore = "1.1.1"
+lifecycle = "2.8.6"
+navigation = "2.8.1"
+activity-compose = "1.9.2"
+material = "1.12.0"
+
+[libraries]
+# Compose
+compose-bom                       = { group = "androidx.compose",          name = "compose-bom",                      version.ref = "compose-bom" }
+compose-ui                        = { group = "androidx.compose.ui",        name = "ui" }
+compose-ui-tooling-preview        = { group = "androidx.compose.ui",        name = "ui-tooling-preview" }
+compose-ui-tooling                = { group = "androidx.compose.ui",        name = "ui-tooling" }
+compose-material3                 = { group = "androidx.compose.material3", name = "material3" }
+compose-material-icons-extended   = { group = "androidx.compose.material",  name = "material-icons-extended" }
+compose-activity                  = { group = "androidx.activity",           name = "activity-compose",                version.ref = "activity-compose" }
+compose-navigation                = { group = "androidx.navigation",         name = "navigation-compose",              version.ref = "navigation" }
+
+# Lifecycle
+lifecycle-viewmodel-compose       = { group = "androidx.lifecycle",          name = "lifecycle-viewmodel-compose",     version.ref = "lifecycle" }
+lifecycle-runtime-compose         = { group = "androidx.lifecycle",          name = "lifecycle-runtime-compose",       version.ref = "lifecycle" }
+
+# Ktor Client
+ktor-client-core                  = { group = "io.ktor",                     name = "ktor-client-core",                version.ref = "ktor" }
+ktor-client-okhttp                = { group = "io.ktor",                     name = "ktor-client-okhttp",              version.ref = "ktor" }
+ktor-client-content-negotiation   = { group = "io.ktor",                     name = "ktor-client-content-negotiation", version.ref = "ktor" }
+ktor-serialization-kotlinx-json   = { group = "io.ktor",                     name = "ktor-serialization-kotlinx-json", version.ref = "ktor" }
+
+# Ktor Server (встроенный HTTP-сервер)
+ktor-server-core                  = { group = "io.ktor",                     name = "ktor-server-core",                version.ref = "ktor" }
+ktor-server-cio                   = { group = "io.ktor",                     name = "ktor-server-cio",                 version.ref = "ktor" }
+ktor-server-content-negotiation   = { group = "io.ktor",                     name = "ktor-server-content-negotiation", version.ref = "ktor" }
+
+# Serialization
+kotlinx-serialization-json        = { group = "org.jetbrains.kotlinx",       name = "kotlinx-serialization-json",      version.ref = "kotlinx-serialization" }
+
+# DataStore
+datastore-preferences             = { group = "androidx.datastore",          name = "datastore-preferences",           version.ref = "datastore" }
+
+# Material Components (нужен для темы в Manifest)
+material                          = { group = "com.google.android.material",  name = "material",                        version.ref = "material" }
+
+[plugins]
+android-application   = { id = "com.android.application",                    version.ref = "agp" }
+kotlin-android        = { id = "org.jetbrains.kotlin.android",               version.ref = "kotlin" }
+kotlin-compose        = { id = "org.jetbrains.kotlin.plugin.compose",        version.ref = "kotlin" }
+kotlin-serialization  = { id = "org.jetbrains.kotlin.plugin.serialization",  version.ref = "kotlin" }

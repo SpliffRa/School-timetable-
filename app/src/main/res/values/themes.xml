@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Базовая тема приложения — Compose рисует весь UI сам,
+         эта тема нужна только для системных элементов (статус-бар и т.п.) -->
+    <style name="Theme.ScheduleApp" parent="Theme.Material3.DayNight.NoActionBar" />
+</resources>
