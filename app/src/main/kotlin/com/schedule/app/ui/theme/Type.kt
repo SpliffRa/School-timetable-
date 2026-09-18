@@ -7,49 +7,79 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.sp
 
 val ScheduleTypography = Typography(
-    // Топбар / заголовок экрана
+    // Крупные заголовки дней и экрана
+    headlineLarge = TextStyle(
+        fontFamily = FontFamily.SansSerif,
+        fontWeight = FontWeight.ExtraBold,
+        fontSize = 28.sp,
+        letterSpacing = (-0.3).sp
+    ),
     headlineMedium = TextStyle(
         fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 22.sp,
+        fontWeight = FontWeight.Bold,
+        fontSize = 24.sp,
         letterSpacing = (-0.2).sp
     ),
     headlineSmall = TextStyle(
         fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 18.sp,
+        fontWeight = FontWeight.Bold,
+        fontSize = 20.sp,
         letterSpacing = (-0.2).sp
     ),
-    // Заголовок дня / предмета
+    // Заголовки уроков, секций
     titleLarge = TextStyle(
         fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.SemiBold,
-        fontSize = 17.sp,
-        letterSpacing = (-0.2).sp
+        fontWeight = FontWeight.Bold,
+        fontSize = 19.sp,
+        letterSpacing = (-0.1).sp
     ),
     titleMedium = TextStyle(
         fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.Medium,
-        fontSize = 15.sp,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 17.sp,
         letterSpacing = (-0.1).sp
     ),
-    // Тело карточки
+    titleSmall = TextStyle(
+        fontFamily = FontFamily.SansSerif,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 15.sp,
+        letterSpacing = 0.sp
+    ),
+    // Основной текст и элементы чек-листа
     bodyLarge = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Normal,
-        fontSize = 15.sp,
+        fontSize = 17.sp,
         letterSpacing = 0.sp
     ),
     bodyMedium = TextStyle(
         fontFamily = FontFamily.SansSerif,
         fontWeight = FontWeight.Normal,
+        fontSize = 15.sp,
+        letterSpacing = 0.sp
+    ),
+    bodySmall = TextStyle(
+        fontFamily = FontFamily.SansSerif,
+        fontWeight = FontWeight.Normal,
         fontSize = 13.sp,
         letterSpacing = 0.sp
     ),
-    // Чип «N вещей»
+    // Бейджи, кнопки, чипы
+    labelLarge = TextStyle(
+        fontFamily = FontFamily.SansSerif,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 15.sp,
+        letterSpacing = 0.sp
+    ),
     labelMedium = TextStyle(
         fontFamily = FontFamily.SansSerif,
-        fontWeight = FontWeight.Medium,
+        fontWeight = FontWeight.SemiBold,
+        fontSize = 13.sp,
+        letterSpacing = 0.sp
+    ),
+    labelSmall = TextStyle(
+        fontFamily = FontFamily.SansSerif,
+        fontWeight = FontWeight.Bold,
         fontSize = 12.sp,
         letterSpacing = 0.sp
     )

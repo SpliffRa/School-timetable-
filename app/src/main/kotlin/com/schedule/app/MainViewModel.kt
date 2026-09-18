@@ -88,6 +88,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun deviceNameClientFlow() = dataStore.deviceNameClientFlow
     fun editorPinFlow() = dataStore.editorPinFlow
     fun syncCodeFlow() = dataStore.syncCodeFlow
+    fun fontScaleFlow() = dataStore.fontScaleFlow
+
+    fun saveFontScale(scale: Float) {
+        viewModelScope.launch {
+            dataStore.saveFontScale(scale)
+        }
+    }
 
     fun saveSyncCode(code: String) {
         viewModelScope.launch {

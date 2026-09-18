@@ -2,6 +2,7 @@ package com.schedule.app.data.store
 
 import android.content.Context
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
@@ -18,6 +19,7 @@ private val KEY_DEVICE_NAME_CLIENT = stringPreferencesKey("device_name_client") 
 private val KEY_PIN                = stringPreferencesKey("editor_pin")
 private val KEY_LAST_VERSION       = longPreferencesKey("last_known_version")
 private val KEY_SYNC_CODE          = stringPreferencesKey("sync_code")
+private val KEY_FONT_SCALE          = floatPreferencesKey("font_scale")
 
 class AppDataStore(private val context: Context) {
 
@@ -68,6 +70,15 @@ class AppDataStore(private val context: Context) {
     /** Код семьи для облачной синхронизации (по умолчанию "Алиса-2026") */
     val syncCodeFlow: Flow<String> = context.dataStore.data.map { prefs ->
         prefs[KEY_SYNC_CODE]?.takeIf { it.isNotBlank() } ?: "Алиса-2026"
+    }
+
+    /** Масштаб шрифта в приложении (1.0f = 100%, 1.15f = 115%, 1.30f = 130%, 1.45f = 145%) */
+    val fontScaleFlow: Flow<Float> = context.dataStore.data.map { prefs ->
+        prefs[KEY_FONT_SCALE] ?: 1.0f
+    }
+
+    suspend fun saveFontScale(scale: Float) {
+        context.dataStore.edit { prefs -> prefs[KEY_FONT_SCALE] = scale }
     }
 
     suspend fun saveCache(json: String) {

@@ -12,6 +12,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -19,10 +24,21 @@ import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FileUpload
+import androidx.compose.material.icons.filled.FormatSize
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.TabletAndroid
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import com.schedule.app.ui.theme.Accent
+import com.schedule.app.ui.theme.AccentDark
+import com.schedule.app.ui.theme.InnerBoxDarkBg
+import com.schedule.app.ui.theme.InnerBoxDarkBorder
+import com.schedule.app.ui.theme.InnerBoxLightBg
+import com.schedule.app.ui.theme.InnerBoxLightBorder
+import com.schedule.app.ui.theme.SuccessMint
+import com.schedule.app.ui.theme.SuccessMintBright
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -71,6 +87,7 @@ fun SettingsScreen(
     val clientName  by viewModel.deviceNameClientFlow().collectAsStateWithLifecycle(initialValue = "Планшет Алисы")
     val currentPin  by viewModel.editorPinFlow().collectAsStateWithLifecycle(initialValue = "1234")
     val currentSyncCode by viewModel.syncCodeFlow().collectAsStateWithLifecycle(initialValue = "Алиса-2026")
+    val fontScale by viewModel.fontScaleFlow().collectAsStateWithLifecycle(initialValue = 1.0f)
 
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -155,6 +172,12 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(20.dp)
         ) {
+
+            // ── Размер шрифта ────────────────────────────────────────────────
+            FontSizeSettingsCard(
+                fontScale = fontScale,
+                onScaleChange = { viewModel.saveFontScale(it) }
+            )
 
             // ── Переключатель режимов / вкладок ───────────────────────────────
             Text(
@@ -682,3 +705,120 @@ private fun PasswordPromptDialog(
         }
     )
 }
+
+@Composable
+private fun FontSizeSettingsCard(
+    fontScale: Float,
+    onScaleChange: (Float) -> Unit
+) {
+    val isDark = isSystemInDarkTheme()
+    val options = listOf(
+        1.00f to "100%",
+        1.15f to "115%",
+        1.30f to "130%",
+        1.45f to "145%"
+    )
+
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surface,
+        border = BorderStroke(1.dp, if (isDark) Color(0xFF2B303E) else Color(0xFFE2E6EF))
+    ) {
+        Column(modifier = Modifier.padding(16.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Filled.FormatSize,
+                    contentDescription = null,
+                    tint = if (isDark) AccentDark else Accent,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(Modifier.width(10.dp))
+                Column {
+                    Text(
+                        text = "Размер шрифта",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "Масштабирует текст во всем расписании и списках",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.secondary
+                    )
+                }
+            }
+
+            Spacer(Modifier.height(14.dp))
+
+            // Переключатель размеров
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                options.forEach { (scale, label) ->
+                    val isSelected = kotlin.math.abs(fontScale - scale) < 0.05f
+                    Surface(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(42.dp)
+                            .clip(RoundedCornerShape(10.dp))
+                            .clickable { onScaleChange(scale) },
+                        shape = RoundedCornerShape(10.dp),
+                        color = if (isSelected) {
+                            if (isDark) AccentDark else Accent
+                        } else {
+                            if (isDark) Color(0xFF242834) else Color(0xFFF3F5FA)
+                        },
+                        border = BorderStroke(
+                            1.dp,
+                            if (isSelected) (if (isDark) AccentDark else Accent)
+                            else (if (isDark) Color(0xFF333A4A) else Color(0xFFE2E6EF))
+                        )
+                    ) {
+                        Box(contentAlignment = Alignment.Center) {
+                            Text(
+                                text = label,
+                                style = MaterialTheme.typography.labelMedium,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isSelected) Color.White else MaterialTheme.colorScheme.onSurface
+                            )
+                        }
+                    }
+                }
+            }
+
+            Spacer(Modifier.height(12.dp))
+
+            // Предпросмотр текста в реальном времени
+            Surface(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                color = if (isDark) InnerBoxDarkBg else InnerBoxLightBg,
+                border = BorderStroke(1.dp, if (isDark) InnerBoxDarkBorder else InnerBoxLightBorder)
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Text(
+                        text = "Пример отображения:",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.secondary
+                    )
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        text = "1. Русский Язык  08:30–09:05",
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = "✓ Тетрадь в косую линейку",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (isDark) SuccessMintBright else SuccessMint,
+                        fontWeight = FontWeight.Medium
+                    )
+                }
+            }
+        }
+    }
+}
+

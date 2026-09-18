@@ -4,6 +4,11 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.getValue
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -20,34 +25,43 @@ class MainActivity : ComponentActivity() {
         // Edge-to-edge отрисовка — Scaffold/TopAppBar сами обрабатывают insets
         enableEdgeToEdge()
         setContent {
-            ScheduleTheme {
-                val navController = rememberNavController()
-                // Один ViewModel на все экраны
-                val viewModel: MainViewModel = viewModel()
+            val viewModel: MainViewModel = viewModel()
+            val fontScale by viewModel.fontScaleFlow().collectAsStateWithLifecycle(initialValue = 1.0f)
+            val currentDensity = LocalDensity.current
 
-                NavHost(
-                    navController = navController,
-                    startDestination = "main"
-                ) {
-                    composable("main") {
-                        MainScreen(
-                            viewModel = viewModel,
-                            onNavigateToSettings = { navController.navigate("settings") },
-                            onNavigateToEditor = { navController.navigate("editor") }
-                        )
-                    }
-                    composable("settings") {
-                        SettingsScreen(
-                            viewModel = viewModel,
-                            onNavigateBack = { navController.popBackStack() },
-                            onNavigateToEditor = { navController.navigate("editor") }
-                        )
-                    }
-                    composable("editor") {
-                        EditScheduleScreen(
-                            viewModel = viewModel,
-                            onNavigateBack = { navController.popBackStack() }
-                        )
+            CompositionLocalProvider(
+                LocalDensity provides Density(
+                    density = currentDensity.density,
+                    fontScale = currentDensity.fontScale * fontScale
+                )
+            ) {
+                ScheduleTheme {
+                    val navController = rememberNavController()
+
+                    NavHost(
+                        navController = navController,
+                        startDestination = "main"
+                    ) {
+                        composable("main") {
+                            MainScreen(
+                                viewModel = viewModel,
+                                onNavigateToSettings = { navController.navigate("settings") },
+                                onNavigateToEditor = { navController.navigate("editor") }
+                            )
+                        }
+                        composable("settings") {
+                            SettingsScreen(
+                                viewModel = viewModel,
+                                onNavigateBack = { navController.popBackStack() },
+                                onNavigateToEditor = { navController.navigate("editor") }
+                            )
+                        }
+                        composable("editor") {
+                            EditScheduleScreen(
+                                viewModel = viewModel,
+                                onNavigateBack = { navController.popBackStack() }
+                            )
+                        }
                     }
                 }
             }

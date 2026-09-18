@@ -12,6 +12,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -35,9 +36,11 @@ import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.FormatSize
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
@@ -48,6 +51,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -76,12 +80,26 @@ import com.schedule.app.UiState
 import com.schedule.app.data.model.Lesson
 import com.schedule.app.data.model.Schedule
 import com.schedule.app.ui.theme.Accent
+import com.schedule.app.ui.theme.AccentDark
+import com.schedule.app.ui.theme.Divider
+import com.schedule.app.ui.theme.DividerDark
+import com.schedule.app.ui.theme.InnerBoxDarkBg
+import com.schedule.app.ui.theme.InnerBoxDarkBorder
+import com.schedule.app.ui.theme.InnerBoxLightBg
+import com.schedule.app.ui.theme.InnerBoxLightBorder
 import com.schedule.app.ui.theme.NeutralPill
+import com.schedule.app.ui.theme.NeutralPillBright
+import com.schedule.app.ui.theme.NeutralPillDarkBg
 import com.schedule.app.ui.theme.NeutralPillLight
 import com.schedule.app.ui.theme.PendingAmber
+import com.schedule.app.ui.theme.PendingAmberBright
+import com.schedule.app.ui.theme.PendingAmberDarkBg
 import com.schedule.app.ui.theme.PendingAmberLight
 import com.schedule.app.ui.theme.SegmentContainer
+import com.schedule.app.ui.theme.SegmentContainerDark
 import com.schedule.app.ui.theme.SuccessMint
+import com.schedule.app.ui.theme.SuccessMintBright
+import com.schedule.app.ui.theme.SuccessMintDarkBg
 import com.schedule.app.ui.theme.SuccessMintLight
 import java.time.LocalDate
 import java.time.YearMonth
@@ -98,10 +116,7 @@ private val WEEK_DAYS = listOf(
 
 private val WEEK_DAYS_SHORT = listOf("Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс")
 
-/** Возвращает индекс 0..6 для текущего дня недели (0 = Понедельник) */
 private fun todayIndex(): Int = LocalDate.now().dayOfWeek.value - 1
-
-/** Возвращает индекс 0..6 для завтрашнего дня (0 = Понедельник) */
 private fun tomorrowIndex(): Int = LocalDate.now().dayOfWeek.value % 7
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -121,13 +136,28 @@ fun MainScreen(
     val syncState   by viewModel.syncState.collectAsStateWithLifecycle()
     val syncError   by viewModel.syncError.collectAsStateWithLifecycle()
     val isAdminMode by viewModel.isAdminMode.collectAsStateWithLifecycle()
+    val fontScale   by viewModel.fontScaleFlow().collectAsStateWithLifecycle(initialValue = 1.0f)
 
+    val isDark = isSystemInDarkTheme()
     val isParentMode = isAdminMode || deviceRole == "SERVER"
 
     val tabs = listOf("День", "Неделя", "Месяц")
     var selectedTab by remember { mutableStateOf(0) }
     var selectedDayIdx by remember { mutableStateOf(tomorrowIndex().coerceIn(0, 6)) }
     var currentMonth by remember { mutableStateOf(YearMonth.now()) }
+
+    var showFontSizeDialog by remember { mutableStateOf(false) }
+
+    if (showFontSizeDialog) {
+        FontSizeSelectorDialog(
+            currentScale = fontScale,
+            onSelectScale = { newScale ->
+                viewModel.saveFontScale(newScale)
+                showFontSizeDialog = false
+            },
+            onDismiss = { showFontSizeDialog = false }
+        )
+    }
 
     Scaffold(
         topBar = {
@@ -136,7 +166,6 @@ fun MainScreen(
                     .fillMaxWidth()
                     .background(MaterialTheme.colorScheme.background)
             ) {
-                // Верхний бар с крупным заголовком и статусом синхронизации
                 TopAppBar(
                     title = {
                         Text(
@@ -147,7 +176,7 @@ fun MainScreen(
                         )
                     },
                     actions = {
-                        // Капсульный индикатор статуса облака
+                        // Облачная синхронизация
                         CloudSyncPill(
                             syncState = syncState,
                             syncStatus = syncStatus,
@@ -157,20 +186,43 @@ fun MainScreen(
 
                         Spacer(Modifier.width(8.dp))
 
-                        // Кнопка настроек
+                        // Быстрая кнопка размера текста «Аа»
+                        Surface(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(CircleShape)
+                                .clickable { showFontSizeDialog = true },
+                            shape = CircleShape,
+                            color = if (isDark) Color(0xFF242834) else Color(0xFFECEFF5),
+                            border = BorderStroke(1.dp, if (isDark) Color(0xFF333A4A) else Color(0xFFE0E5EE))
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                Text(
+                                    text = "Аа",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isDark) Color.White else Color(0xFF161922)
+                                )
+                            }
+                        }
+
+                        Spacer(Modifier.width(8.dp))
+
+                        // Кнопка настроек с высокой контрастностью шестеренки
                         Surface(
                             modifier = Modifier
                                 .size(38.dp)
                                 .clip(CircleShape)
                                 .clickable(onClick = onNavigateToSettings),
                             shape = CircleShape,
-                            color = SegmentContainer
+                            color = if (isDark) Color(0xFF242834) else Color(0xFFECEFF5),
+                            border = BorderStroke(1.dp, if (isDark) Color(0xFF333A4A) else Color(0xFFE0E5EE))
                         ) {
                             Box(contentAlignment = Alignment.Center) {
                                 Icon(
                                     imageVector = Icons.Filled.Settings,
                                     contentDescription = "Настройки",
-                                    tint = MaterialTheme.colorScheme.onSurface,
+                                    tint = if (isDark) Color.White else Color(0xFF161922),
                                     modifier = Modifier.size(20.dp)
                                 )
                             }
@@ -183,14 +235,15 @@ fun MainScreen(
                     )
                 )
 
-                // Баннер ошибки синхронизации (если возникла)
+                // Ошибка синхронизации
                 AnimatedVisibility(visible = syncError != null) {
                     Surface(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp, vertical = 4.dp),
                         shape = RoundedCornerShape(12.dp),
-                        color = MaterialTheme.colorScheme.error.copy(alpha = 0.1f)
+                        color = MaterialTheme.colorScheme.error.copy(alpha = 0.15f),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = 0.4f))
                     ) {
                         Row(
                             modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
@@ -205,14 +258,15 @@ fun MainScreen(
                             Spacer(Modifier.width(8.dp))
                             Text(
                                 text = syncError ?: "",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.error
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.error,
+                                fontWeight = FontWeight.Medium
                             )
                         }
                     }
                 }
 
-                // Apple-style капсульный переключатель вкладок
+                // Apple Segmented Control (адаптирован под темную/светлую тему)
                 AppleSegmentedControl(
                     items = tabs,
                     selectedIndex = selectedTab,
@@ -235,10 +289,11 @@ fun MainScreen(
                     text = {
                         Text(
                             "Редактировать",
-                            fontWeight = FontWeight.SemiBold
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold
                         )
                     },
-                    containerColor = Accent,
+                    containerColor = if (isDark) AccentDark else Accent,
                     contentColor = Color.White,
                     shape = RoundedCornerShape(16.dp)
                 )
@@ -254,7 +309,7 @@ fun MainScreen(
         ) {
             when (val state = uiState) {
                 is UiState.Loading -> Box(Modifier.fillMaxSize(), Alignment.Center) {
-                    CircularProgressIndicator(color = Accent)
+                    CircularProgressIndicator(color = if (isDark) AccentDark else Accent)
                 }
 
                 is UiState.Error -> Box(
@@ -301,7 +356,111 @@ fun MainScreen(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Apple-Style Капсульный переключатель (Segmented Control)
+// Диалог выбора масштаба текста
+// ─────────────────────────────────────────────────────────────────────────────
+
+@Composable
+fun FontSizeSelectorDialog(
+    currentScale: Float,
+    onSelectScale: (Float) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val isDark = isSystemInDarkTheme()
+    val options = listOf(
+        1.00f to "Обычный (100%)",
+        1.15f to "Средний (115%)",
+        1.30f to "Крупный (130%)",
+        1.45f to "Очень крупный (145%)"
+    )
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    Icons.Filled.FormatSize,
+                    contentDescription = null,
+                    tint = if (isDark) AccentDark else Accent,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    "Размер шрифта",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    "Выберите комфортный размер текста для уроков и списков:",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.secondary
+                )
+
+                Spacer(Modifier.height(4.dp))
+
+                options.forEach { (scale, label) ->
+                    val isSelected = kotlin.math.abs(currentScale - scale) < 0.05f
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable { onSelectScale(scale) },
+                        shape = RoundedCornerShape(12.dp),
+                        color = if (isSelected) {
+                            if (isDark) AccentDark.copy(alpha = 0.2f) else Accent.copy(alpha = 0.12f)
+                        } else {
+                            if (isDark) Color(0xFF242834) else Color(0xFFF3F5FA)
+                        },
+                        border = BorderStroke(
+                            1.dp,
+                            if (isSelected) (if (isDark) AccentDark else Accent)
+                            else (if (isDark) Color(0xFF333A4A) else Color(0xFFE2E6EF))
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Text(
+                                text = label,
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                color = if (isSelected) {
+                                    if (isDark) AccentDark else Accent
+                                } else {
+                                    MaterialTheme.colorScheme.onSurface
+                                }
+                            )
+                            if (isSelected) {
+                                Icon(
+                                    Icons.Filled.Check,
+                                    contentDescription = null,
+                                    tint = if (isDark) AccentDark else Accent,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Закрыть", style = MaterialTheme.typography.labelLarge)
+            }
+        }
+    )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Apple-Style Капсульный переключатель (высокая контрастность)
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
@@ -312,13 +471,19 @@ fun AppleSegmentedControl(
     modifier: Modifier = Modifier
 ) {
     val haptic = LocalHapticFeedback.current
+    val isDark = isSystemInDarkTheme()
+
+    val containerColor = if (isDark) SegmentContainerDark else SegmentContainer
+    val activeTabColor = if (isDark) Color(0xFF323846) else Color.White
+    val activeBorder   = if (isDark) BorderStroke(1.dp, Color(0xFF454E60)) else null
 
     Surface(
         modifier = modifier
             .fillMaxWidth()
-            .height(44.dp),
+            .height(46.dp),
         shape = RoundedCornerShape(14.dp),
-        color = SegmentContainer
+        color = containerColor,
+        border = BorderStroke(1.dp, if (isDark) Color(0xFF2E3342) else Color(0xFFDEE3ED))
     ) {
         Row(
             modifier = Modifier
@@ -340,8 +505,9 @@ fun AppleSegmentedControl(
                             }
                         },
                     shape = RoundedCornerShape(11.dp),
-                    color = if (isSelected) MaterialTheme.colorScheme.surface else Color.Transparent,
-                    shadowElevation = if (isSelected) 2.dp else 0.dp
+                    color = if (isSelected) activeTabColor else Color.Transparent,
+                    shadowElevation = if (isSelected && !isDark) 2.dp else 0.dp,
+                    border = if (isSelected) activeBorder else null
                 ) {
                     Box(
                         modifier = Modifier.fillMaxSize(),
@@ -350,8 +516,12 @@ fun AppleSegmentedControl(
                         Text(
                             text = title,
                             style = MaterialTheme.typography.labelLarge,
-                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
-                            color = if (isSelected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.secondary
+                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.SemiBold,
+                            color = if (isSelected) {
+                                if (isDark) Color.White else MaterialTheme.colorScheme.onSurface
+                            } else {
+                                MaterialTheme.colorScheme.secondary
+                            }
                         )
                     }
                 }
@@ -361,7 +531,7 @@ fun AppleSegmentedControl(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Капсула статуса синхронизации в шапке
+// Капсула статуса синхронизации
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
@@ -372,18 +542,19 @@ private fun CloudSyncPill(
     onSyncClick: () -> Unit
 ) {
     val haptic = LocalHapticFeedback.current
+    val isDark = isSystemInDarkTheme()
 
     val containerColor = when {
-        hasError -> MaterialTheme.colorScheme.error.copy(alpha = 0.12f)
-        syncState == SyncState.SYNCING -> Accent.copy(alpha = 0.12f)
-        syncState == SyncState.SUCCESS -> SuccessMintLight
-        else -> SegmentContainer
+        hasError -> MaterialTheme.colorScheme.error.copy(alpha = 0.18f)
+        syncState == SyncState.SYNCING -> (if (isDark) AccentDark else Accent).copy(alpha = 0.20f)
+        syncState == SyncState.SUCCESS -> (if (isDark) SuccessMintDarkBg else SuccessMintLight)
+        else -> if (isDark) Color(0xFF242834) else Color(0xFFECEFF5)
     }
 
     val contentColor = when {
         hasError -> MaterialTheme.colorScheme.error
-        syncState == SyncState.SYNCING -> Accent
-        syncState == SyncState.SUCCESS -> SuccessMint
+        syncState == SyncState.SYNCING -> if (isDark) AccentDark else Accent
+        syncState == SyncState.SUCCESS -> if (isDark) SuccessMintBright else SuccessMint
         else -> MaterialTheme.colorScheme.secondary
     }
 
@@ -395,16 +566,17 @@ private fun CloudSyncPill(
                 onSyncClick()
             },
         shape = RoundedCornerShape(12.dp),
-        color = containerColor
+        color = containerColor,
+        border = BorderStroke(1.dp, if (isDark) Color(0xFF333A4A) else Color(0xFFE0E5EE))
     ) {
         Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             when (syncState) {
                 SyncState.SYNCING -> {
                     CircularProgressIndicator(
-                        modifier = Modifier.size(12.dp),
+                        modifier = Modifier.size(13.dp),
                         strokeWidth = 2.dp,
                         color = contentColor
                     )
@@ -413,7 +585,7 @@ private fun CloudSyncPill(
                         "Обновление…",
                         style = MaterialTheme.typography.labelSmall,
                         color = contentColor,
-                        fontWeight = FontWeight.SemiBold
+                        fontWeight = FontWeight.Bold
                     )
                 }
                 SyncState.ERROR -> {
@@ -421,20 +593,20 @@ private fun CloudSyncPill(
                         Icons.Filled.Warning,
                         contentDescription = null,
                         tint = contentColor,
-                        modifier = Modifier.size(13.dp)
+                        modifier = Modifier.size(14.dp)
                     )
                     Spacer(Modifier.width(6.dp))
                     Text(
                         "Ошибка",
                         style = MaterialTheme.typography.labelSmall,
                         color = contentColor,
-                        fontWeight = FontWeight.SemiBold
+                        fontWeight = FontWeight.Bold
                     )
                 }
                 SyncState.SUCCESS -> {
                     Box(
                         Modifier
-                            .size(7.dp)
+                            .size(8.dp)
                             .clip(CircleShape)
                             .background(contentColor)
                     )
@@ -443,7 +615,7 @@ private fun CloudSyncPill(
                         "Актуально ☁️",
                         style = MaterialTheme.typography.labelSmall,
                         color = contentColor,
-                        fontWeight = FontWeight.SemiBold
+                        fontWeight = FontWeight.Bold
                     )
                 }
                 SyncState.IDLE -> {
@@ -451,14 +623,14 @@ private fun CloudSyncPill(
                         Icons.Filled.Refresh,
                         contentDescription = null,
                         tint = contentColor,
-                        modifier = Modifier.size(13.dp)
+                        modifier = Modifier.size(14.dp)
                     )
                     Spacer(Modifier.width(6.dp))
                     Text(
                         "Облако",
                         style = MaterialTheme.typography.labelSmall,
                         color = contentColor,
-                        fontWeight = FontWeight.SemiBold
+                        fontWeight = FontWeight.Bold
                     )
                 }
             }
@@ -467,7 +639,7 @@ private fun CloudSyncPill(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Apple Large Title Заголовок дня со стрелками перехода
+// Заголовок дня
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
@@ -481,6 +653,7 @@ private fun DayHeader(
     nextEnabled: Boolean
 ) {
     val haptic = LocalHapticFeedback.current
+    val isDark = isSystemInDarkTheme()
 
     Row(
         modifier = Modifier
@@ -494,9 +667,9 @@ private fun DayHeader(
                 Text(
                     text = tag.uppercase(Locale.getDefault()),
                     style = MaterialTheme.typography.labelSmall,
-                    fontWeight = FontWeight.Bold,
-                    color = Accent,
-                    letterSpacing = 1.1.sp
+                    fontWeight = FontWeight.ExtraBold,
+                    color = if (isDark) AccentDark else Accent,
+                    letterSpacing = 1.2.sp
                 )
                 Spacer(Modifier.height(1.dp))
             }
@@ -510,53 +683,78 @@ private fun DayHeader(
                 Text(
                     text = dateText,
                     style = MaterialTheme.typography.bodyMedium,
+                    fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.secondary
                 )
             }
         }
 
-        // Круглые кнопки навигации
+        // Круглые кнопки навигации со стрелками
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Surface(
                 modifier = Modifier
-                    .size(38.dp)
+                    .size(40.dp)
                     .clip(CircleShape)
                     .clickable(enabled = prevEnabled) {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         onPrev()
                     },
                 shape = CircleShape,
-                color = if (prevEnabled) MaterialTheme.colorScheme.surface else SegmentContainer.copy(alpha = 0.5f),
-                shadowElevation = if (prevEnabled) 1.5.dp else 0.dp
+                color = if (prevEnabled) {
+                    if (isDark) Color(0xFF242834) else Color.White
+                } else {
+                    if (isDark) Color(0xFF191B22) else Color(0xFFF3F5FA)
+                },
+                shadowElevation = if (prevEnabled && !isDark) 1.5.dp else 0.dp,
+                border = BorderStroke(
+                    1.dp,
+                    if (isDark) Color(0xFF333A4A) else Color(0xFFE2E6EF)
+                )
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                         contentDescription = "Предыдущий день",
-                        modifier = Modifier.size(18.dp),
-                        tint = if (prevEnabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.secondary.copy(alpha = 0.3f)
+                        modifier = Modifier.size(20.dp),
+                        tint = if (prevEnabled) {
+                            if (isDark) Color.White else Color(0xFF161922)
+                        } else {
+                            MaterialTheme.colorScheme.secondary.copy(alpha = 0.3f)
+                        }
                     )
                 }
             }
 
             Surface(
                 modifier = Modifier
-                    .size(38.dp)
+                    .size(40.dp)
                     .clip(CircleShape)
                     .clickable(enabled = nextEnabled) {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         onNext()
                     },
                 shape = CircleShape,
-                color = if (nextEnabled) MaterialTheme.colorScheme.surface else SegmentContainer.copy(alpha = 0.5f),
-                shadowElevation = if (nextEnabled) 1.5.dp else 0.dp
+                color = if (nextEnabled) {
+                    if (isDark) Color(0xFF242834) else Color.White
+                } else {
+                    if (isDark) Color(0xFF191B22) else Color(0xFFF3F5FA)
+                },
+                shadowElevation = if (nextEnabled && !isDark) 1.5.dp else 0.dp,
+                border = BorderStroke(
+                    1.dp,
+                    if (isDark) Color(0xFF333A4A) else Color(0xFFE2E6EF)
+                )
             ) {
                 Box(contentAlignment = Alignment.Center) {
                     Icon(
                         imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                         contentDescription = "Следующий день",
-                        modifier = Modifier.size(18.dp),
-                        tint = if (nextEnabled) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.secondary.copy(alpha = 0.3f)
+                        modifier = Modifier.size(20.dp),
+                        tint = if (nextEnabled) {
+                            if (isDark) Color.White else Color(0xFF161922)
+                        } else {
+                            MaterialTheme.colorScheme.secondary.copy(alpha = 0.3f)
+                        }
                     )
                 }
             }
@@ -565,7 +763,7 @@ private fun DayHeader(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Баннер прогресса рюкзака на день (Apple-Style Widget)
+// Баннер прогресса рюкзака (высокий контраст)
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
@@ -575,6 +773,7 @@ private fun BackpackSummaryCard(
 ) {
     if (totalCount == 0) return
 
+    val isDark = isSystemInDarkTheme()
     val progress = checkedCount.toFloat() / totalCount
     val isComplete = checkedCount == totalCount
     val percent = (progress * 100).toInt()
@@ -585,14 +784,24 @@ private fun BackpackSummaryCard(
         label = "backpackProgress"
     )
 
+    val cardBg = when {
+        isComplete -> if (isDark) SuccessMintDarkBg else SuccessMintLight
+        else -> MaterialTheme.colorScheme.surface
+    }
+
+    val cardBorder = when {
+        isComplete -> BorderStroke(1.5.dp, if (isDark) SuccessMintBright else SuccessMint)
+        else -> BorderStroke(1.dp, if (isDark) Color(0xFF2E3342) else Color(0xFFE2E6EF))
+    }
+
     Surface(
         modifier = Modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp, vertical = 6.dp),
         shape = RoundedCornerShape(20.dp),
-        color = if (isComplete) SuccessMintLight else MaterialTheme.colorScheme.surface,
-        shadowElevation = if (isComplete) 0.dp else 1.5.dp,
-        border = if (isComplete) BorderStroke(1.dp, SuccessMint.copy(alpha = 0.3f)) else null
+        color = cardBg,
+        shadowElevation = if (isComplete || isDark) 0.dp else 1.5.dp,
+        border = cardBorder
     ) {
         Column(
             modifier = Modifier.padding(16.dp)
@@ -602,43 +811,63 @@ private fun BackpackSummaryCard(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("🎒", fontSize = 22.sp)
+                Row(
+                    modifier = Modifier.weight(1f),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text("🎒", fontSize = 24.sp)
                     Spacer(Modifier.width(10.dp))
                     Column {
                         Text(
                             text = if (isComplete) "Рюкзак собран на 100%!" else "Сбор рюкзака",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
-                            color = if (isComplete) SuccessMint else MaterialTheme.colorScheme.onSurface
+                            color = when {
+                                isComplete -> if (isDark) SuccessMintBright else Color(0xFF0D5E40)
+                                else -> MaterialTheme.colorScheme.onSurface
+                            }
                         )
                         Text(
                             text = if (isComplete) "Все $totalCount предметов на месте ✓" else "Собрано: $checkedCount из $totalCount (осталось ${totalCount - checkedCount})",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (isComplete) SuccessMint.copy(alpha = 0.85f) else MaterialTheme.colorScheme.secondary
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium,
+                            color = when {
+                                isComplete -> if (isDark) Color(0xFFB4EBD5) else Color(0xFF1B7050)
+                                else -> MaterialTheme.colorScheme.secondary
+                            }
                         )
                     }
                 }
+
+                Spacer(Modifier.width(8.dp))
 
                 // Пилл-бейдж
                 Surface(
                     shape = RoundedCornerShape(12.dp),
                     color = when {
-                        isComplete -> SuccessMint
-                        checkedCount > 0 -> PendingAmberLight
-                        else -> NeutralPillLight
-                    }
+                        isComplete -> if (isDark) SuccessMintBright else SuccessMint
+                        checkedCount > 0 -> if (isDark) PendingAmberDarkBg else PendingAmberLight
+                        else -> if (isDark) NeutralPillDarkBg else NeutralPillLight
+                    },
+                    border = BorderStroke(
+                        1.dp,
+                        when {
+                            isComplete -> Color.Transparent
+                            checkedCount > 0 -> if (isDark) PendingAmberBright.copy(alpha = 0.5f) else PendingAmber.copy(alpha = 0.4f)
+                            else -> if (isDark) Color(0xFF333A4A) else Color(0xFFD4DAE5)
+                        }
+                    )
                 ) {
                     Text(
                         text = if (isComplete) "Готово ✓" else "$percent%",
                         style = MaterialTheme.typography.labelSmall,
-                        fontWeight = FontWeight.Bold,
+                        fontWeight = FontWeight.ExtraBold,
                         color = when {
-                            isComplete -> Color.White
-                            checkedCount > 0 -> PendingAmber
-                            else -> NeutralPill
+                            isComplete -> if (isDark) Color(0xFF101216) else Color.White
+                            checkedCount > 0 -> if (isDark) PendingAmberBright else PendingAmber
+                            else -> if (isDark) NeutralPillBright else NeutralPill
                         },
-                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
+                        modifier = Modifier.padding(horizontal = 10.dp, vertical = 5.dp)
                     )
                 }
             }
@@ -652,8 +881,14 @@ private fun BackpackSummaryCard(
                     .fillMaxWidth()
                     .height(8.dp)
                     .clip(RoundedCornerShape(4.dp)),
-                color = if (isComplete) SuccessMint else Accent,
-                trackColor = if (isComplete) SuccessMint.copy(alpha = 0.2f) else SegmentContainer
+                color = when {
+                    isComplete -> if (isDark) SuccessMintBright else SuccessMint
+                    else -> if (isDark) AccentDark else Accent
+                },
+                trackColor = when {
+                    isComplete -> if (isDark) SuccessMintBright.copy(alpha = 0.2f) else SuccessMint.copy(alpha = 0.2f)
+                    else -> if (isDark) Color(0xFF262B38) else Color(0xFFE2E6EF)
+                }
             )
         }
     }
@@ -676,7 +911,6 @@ private fun DayView(
     val dayName  = WEEK_DAYS.getOrElse(selectedDayIdx) { WEEK_DAYS[0] }
     val day      = schedule.days.find { it.name.trim().equals(dayName.trim(), ignoreCase = true) }
 
-    // Локализованная дата для выбранного дня
     val today = LocalDate.now()
     val dayOffset = selectedDayIdx - todayIdx
     val targetDate = today.plusDays(dayOffset.toLong())
@@ -689,11 +923,8 @@ private fun DayView(
     }
 
     val lessons = day?.lessons?.sortedBy { it.number } ?: emptyList()
-
-    // Состояние чек-боксов дня (ключ: "${lesson.number}_${item}")
     val checkedState = remember(selectedDayIdx) { mutableStateMapOf<String, Boolean>() }
 
-    // Подсчёт суммарных предметов в рюкзаке
     val allItemsKeys = lessons.flatMap { lesson ->
         lesson.items.map { "${lesson.number}_$it" }
     }
@@ -718,14 +949,13 @@ private fun DayView(
                     Spacer(Modifier.height(12.dp))
                     Text(
                         "Уроков нет — выходной!",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.secondary
                     )
                 }
             }
         } else {
-            // Баннер рюкзака
             BackpackSummaryCard(
                 checkedCount = checkedCount,
                 totalCount = totalCount
@@ -753,7 +983,7 @@ private fun DayView(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Карточка урока с Apple DNA (раскрывающийся чек-лист и статусный бейдж)
+// Карточка урока с контрастным чек-листом
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
@@ -763,6 +993,7 @@ private fun LessonExpandableCard(
     onToggleItem: (String) -> Unit
 ) {
     var expanded by remember { mutableStateOf(false) }
+    val isDark = isSystemInDarkTheme()
     val rotation by animateFloatAsState(
         targetValue = if (expanded) 180f else 0f,
         animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
@@ -778,7 +1009,8 @@ private fun LessonExpandableCard(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(20.dp),
         color = MaterialTheme.colorScheme.surface,
-        shadowElevation = 1.5.dp
+        shadowElevation = if (isDark) 0.dp else 1.5.dp,
+        border = BorderStroke(1.dp, if (isDark) Color(0xFF2B303E) else Color(0xFFE2E6EF))
     ) {
         Column {
             // ── Заголовок урока ───────────────────────────────────────────────
@@ -796,16 +1028,18 @@ private fun LessonExpandableCard(
                 // Номер в мягком кружке
                 Box(
                     modifier = Modifier
-                        .size(40.dp)
+                        .size(42.dp)
                         .clip(CircleShape)
-                        .background(Accent.copy(alpha = 0.09f)),
+                        .background(
+                            if (isDark) AccentDark.copy(alpha = 0.22f) else Accent.copy(alpha = 0.12f)
+                        ),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
                         text = lesson.number.toString(),
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = Accent
+                        fontWeight = FontWeight.ExtraBold,
+                        color = if (isDark) Color(0xFF96ACFF) else Accent
                     )
                 }
 
@@ -816,7 +1050,7 @@ private fun LessonExpandableCard(
                     Text(
                         text = lesson.subject,
                         style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
+                        fontWeight = FontWeight.Bold,
                         color = MaterialTheme.colorScheme.onSurface,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
@@ -825,7 +1059,8 @@ private fun LessonExpandableCard(
                         Spacer(Modifier.height(2.dp))
                         Text(
                             text = lesson.time,
-                            style = MaterialTheme.typography.bodySmall,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.secondary
                         )
                     }
@@ -834,14 +1069,14 @@ private fun LessonExpandableCard(
                 // Статусный бейдж готовности
                 if (totalItems > 0) {
                     val pillBg = when {
-                        allDone -> SuccessMintLight
-                        doneCount > 0 -> PendingAmberLight
-                        else -> NeutralPillLight
+                        allDone -> if (isDark) SuccessMintDarkBg else SuccessMintLight
+                        doneCount > 0 -> if (isDark) PendingAmberDarkBg else PendingAmberLight
+                        else -> if (isDark) NeutralPillDarkBg else NeutralPillLight
                     }
                     val pillColor = when {
-                        allDone -> SuccessMint
-                        doneCount > 0 -> PendingAmber
-                        else -> NeutralPill
+                        allDone -> if (isDark) SuccessMintBright else SuccessMint
+                        doneCount > 0 -> if (isDark) PendingAmberBright else PendingAmber
+                        else -> if (isDark) NeutralPillBright else NeutralPill
                     }
                     val pillText = when {
                         allDone -> "$doneCount/$totalItems ✓ Готово"
@@ -850,14 +1085,22 @@ private fun LessonExpandableCard(
 
                     Surface(
                         shape = RoundedCornerShape(10.dp),
-                        color = pillBg
+                        color = pillBg,
+                        border = BorderStroke(
+                            1.dp,
+                            when {
+                                allDone -> if (isDark) SuccessMintBright.copy(alpha = 0.5f) else SuccessMint.copy(alpha = 0.4f)
+                                doneCount > 0 -> if (isDark) PendingAmberBright.copy(alpha = 0.5f) else PendingAmber.copy(alpha = 0.4f)
+                                else -> if (isDark) Color(0xFF333A4A) else Color(0xFFD4DAE5)
+                            }
+                        )
                     ) {
                         Text(
                             text = pillText,
                             style = MaterialTheme.typography.labelSmall,
                             fontWeight = FontWeight.Bold,
                             color = pillColor,
-                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                            modifier = Modifier.padding(horizontal = 8.dp, vertical = 5.dp)
                         )
                     }
 
@@ -868,93 +1111,96 @@ private fun LessonExpandableCard(
                         contentDescription = if (expanded) "Свернуть" else "Развернуть",
                         tint = MaterialTheme.colorScheme.secondary,
                         modifier = Modifier
-                            .size(20.dp)
+                            .size(22.dp)
                             .rotate(rotation)
                     )
                 }
             }
 
-            // ── Раскрывающийся список «Что взять» ─────────────────────────────
+            // ── Раскрывающийся список «Что взять» с четким контрастом ───────────
             AnimatedVisibility(
                 visible = expanded,
                 enter = expandVertically(spring(stiffness = Spring.StiffnessLow)) + fadeIn(),
                 exit = shrinkVertically(spring(stiffness = Spring.StiffnessLow)) + fadeOut()
             ) {
-                Column(
+                Surface(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .background(SegmentContainer.copy(alpha = 0.45f))
-                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                        .padding(horizontal = 12.dp, vertical = 8.dp),
+                    shape = RoundedCornerShape(14.dp),
+                    color = if (isDark) InnerBoxDarkBg else InnerBoxLightBg,
+                    border = BorderStroke(1.dp, if (isDark) InnerBoxDarkBorder else InnerBoxLightBorder)
                 ) {
-                    Text(
-                        text = "Что взять к уроку:",
-                        style = MaterialTheme.typography.labelMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.secondary,
-                        modifier = Modifier.padding(bottom = 6.dp)
-                    )
+                    Column(
+                        modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp)
+                    ) {
+                        Text(
+                            text = "Что взять к уроку:",
+                            style = MaterialTheme.typography.labelLarge,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isDark) Color(0xFF96ACFF) else Accent,
+                            modifier = Modifier.padding(bottom = 8.dp)
+                        )
 
-                    lesson.items.forEach { item ->
-                        val isChecked = isItemChecked(item)
+                        lesson.items.forEach { item ->
+                            val isChecked = isItemChecked(item)
 
-                        Row(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(8.dp))
-                                .clickable {
-                                    haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                    onToggleItem(item)
-                                }
-                                .padding(vertical = 6.dp),
-                            verticalAlignment = Alignment.CenterVertically
-                        ) {
-                            // Круглый Apple-style чекбокс
-                            Box(
+                            Row(
                                 modifier = Modifier
-                                    .size(22.dp)
-                                    .clip(CircleShape)
-                                    .background(
-                                        if (isChecked) SuccessMint else Color.Transparent
-                                    )
-                                    .then(
-                                        if (!isChecked) {
-                                            Modifier.background(
-                                                color = Color.Transparent,
-                                                shape = CircleShape
-                                            )
-                                        } else Modifier
-                                    ),
-                                contentAlignment = Alignment.Center
+                                    .fillMaxWidth()
+                                    .clip(RoundedCornerShape(8.dp))
+                                    .clickable {
+                                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        onToggleItem(item)
+                                    }
+                                    .padding(vertical = 7.dp),
+                                verticalAlignment = Alignment.CenterVertically
                             ) {
-                                if (isChecked) {
-                                    Icon(
-                                        imageVector = Icons.Filled.Check,
-                                        contentDescription = null,
-                                        tint = Color.White,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                } else {
-                                    Surface(
-                                        modifier = Modifier.size(22.dp),
-                                        shape = CircleShape,
-                                        color = Color.Transparent,
-                                        border = BorderStroke(1.5.dp, NeutralPill.copy(alpha = 0.45f))
-                                    ) {}
+                                // Круглый чекбокс высокой четкости
+                                Box(
+                                    modifier = Modifier
+                                        .size(24.dp)
+                                        .clip(CircleShape)
+                                        .background(
+                                            if (isChecked) (if (isDark) SuccessMintBright else SuccessMint)
+                                            else Color.Transparent
+                                        ),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    if (isChecked) {
+                                        Icon(
+                                            imageVector = Icons.Filled.Check,
+                                            contentDescription = null,
+                                            tint = if (isDark) Color(0xFF101216) else Color.White,
+                                            modifier = Modifier.size(16.dp)
+                                        )
+                                    } else {
+                                        Surface(
+                                            modifier = Modifier.size(24.dp),
+                                            shape = CircleShape,
+                                            color = Color.Transparent,
+                                            border = BorderStroke(
+                                                2.dp,
+                                                if (isDark) Color(0xFF657088) else Color(0xFF929DB4)
+                                            )
+                                        ) {}
+                                    }
                                 }
+
+                                Spacer(Modifier.width(12.dp))
+
+                                Text(
+                                    text = item,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = if (isChecked) FontWeight.Normal else FontWeight.Medium,
+                                    color = if (isChecked) {
+                                        if (isDark) Color(0xFF8692A6) else Color(0xFF707A8E)
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurface
+                                    },
+                                    textDecoration = if (isChecked) TextDecoration.LineThrough else TextDecoration.None
+                                )
                             }
-
-                            Spacer(Modifier.width(12.dp))
-
-                            Text(
-                                text = item,
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = if (isChecked) {
-                                    MaterialTheme.colorScheme.secondary.copy(alpha = 0.7f)
-                                } else {
-                                    MaterialTheme.colorScheme.onSurface
-                                },
-                                textDecoration = if (isChecked) TextDecoration.LineThrough else TextDecoration.None
-                            )
                         }
                     }
                 }
@@ -1006,9 +1252,10 @@ private fun WeekDayCard(
     onClick: () -> Unit
 ) {
     val haptic = LocalHapticFeedback.current
+    val isDark = isSystemInDarkTheme()
 
     val surfaceColor = if (isToday) {
-        Accent.copy(alpha = 0.08f)
+        if (isDark) AccentDark.copy(alpha = 0.15f) else Accent.copy(alpha = 0.08f)
     } else {
         MaterialTheme.colorScheme.surface
     }
@@ -1023,29 +1270,32 @@ private fun WeekDayCard(
             },
         shape = RoundedCornerShape(20.dp),
         color = surfaceColor,
-        shadowElevation = if (isToday) 2.dp else 1.dp,
-        border = if (isToday) BorderStroke(1.dp, Accent.copy(alpha = 0.25f)) else null
+        shadowElevation = if (isToday && !isDark) 2.dp else 0.dp,
+        border = BorderStroke(
+            1.dp,
+            if (isToday) (if (isDark) AccentDark.copy(alpha = 0.5f) else Accent.copy(alpha = 0.4f))
+            else (if (isDark) Color(0xFF2B303E) else Color(0xFFE2E6EF))
+        )
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
             verticalAlignment = Alignment.Top
         ) {
-            // Сокращение дня
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
-                modifier = Modifier.width(44.dp)
+                modifier = Modifier.width(48.dp)
             ) {
                 Text(
                     text = shortName,
-                    style = MaterialTheme.typography.titleMedium,
+                    style = MaterialTheme.typography.titleLarge,
                     fontWeight = FontWeight.Bold,
-                    color = if (isToday) Accent else MaterialTheme.colorScheme.onSurface
+                    color = if (isToday) (if (isDark) AccentDark else Accent) else MaterialTheme.colorScheme.onSurface
                 )
                 if (isToday) {
                     Spacer(Modifier.height(4.dp))
                     Surface(
                         shape = RoundedCornerShape(4.dp),
-                        color = Accent
+                        color = if (isDark) AccentDark else Accent
                     ) {
                         Text(
                             text = "СЕГОДНЯ",
@@ -1061,11 +1311,11 @@ private fun WeekDayCard(
 
             Spacer(Modifier.width(14.dp))
 
-            // Список уроков
             if (lessons.isEmpty()) {
                 Text(
                     "Выходной",
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = MaterialTheme.typography.bodyLarge,
+                    fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.secondary,
                     modifier = Modifier.padding(top = 2.dp)
                 )
@@ -1078,14 +1328,14 @@ private fun WeekDayCard(
                         ) {
                             Text(
                                 "${lesson.number}.",
-                                style = MaterialTheme.typography.bodySmall,
+                                style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.secondary,
-                                modifier = Modifier.width(18.dp)
+                                modifier = Modifier.width(20.dp)
                             )
                             Text(
                                 lesson.subject,
-                                style = MaterialTheme.typography.bodyMedium,
+                                style = MaterialTheme.typography.bodyLarge,
                                 fontWeight = FontWeight.Medium,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
@@ -1103,24 +1353,24 @@ private fun WeekDayCard(
                         Spacer(Modifier.height(2.dp))
                         Text(
                             "ещё ${lessons.size - 4}…",
-                            style = MaterialTheme.typography.bodySmall,
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium,
                             color = MaterialTheme.colorScheme.secondary
                         )
                     }
                 }
 
-                // Бейдж с числом уроков
                 Surface(
                     shape = RoundedCornerShape(12.dp),
-                    color = if (isToday) Accent else SegmentContainer,
+                    color = if (isToday) (if (isDark) AccentDark else Accent) else (if (isDark) Color(0xFF262A36) else SegmentContainer),
                     modifier = Modifier.align(Alignment.CenterVertically)
                 ) {
                     Text(
                         "${lessons.size} ур.",
-                        style = MaterialTheme.typography.labelSmall,
+                        style = MaterialTheme.typography.labelMedium,
                         fontWeight = FontWeight.Bold,
                         color = if (isToday) Color.White else MaterialTheme.colorScheme.onSurface,
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                        modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp)
                     )
                 }
             }
@@ -1129,7 +1379,7 @@ private fun WeekDayCard(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Режим: МЕСЯЦ (календарная сетка с Apple-style акцентами)
+// Режим: МЕСЯЦ
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
@@ -1143,6 +1393,7 @@ private fun MonthView(
     val today = LocalDate.now()
     val formatter = DateTimeFormatter.ofPattern("LLLL yyyy", Locale("ru"))
     val haptic = LocalHapticFeedback.current
+    val isDark = isSystemInDarkTheme()
 
     Column(modifier = Modifier.fillMaxSize()) {
         Row(
@@ -1162,44 +1413,44 @@ private fun MonthView(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Surface(
                     modifier = Modifier
-                        .size(36.dp)
+                        .size(38.dp)
                         .clip(CircleShape)
                         .clickable {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             onPrevMonth()
                         },
                     shape = CircleShape,
-                    color = MaterialTheme.colorScheme.surface,
-                    shadowElevation = 1.dp
+                    color = if (isDark) Color(0xFF242834) else Color.White,
+                    border = BorderStroke(1.dp, if (isDark) Color(0xFF333A4A) else Color(0xFFE2E6EF))
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowBack,
                             contentDescription = "Предыдущий месяц",
-                            modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.onSurface
+                            modifier = Modifier.size(18.dp),
+                            tint = if (isDark) Color.White else Color(0xFF161922)
                         )
                     }
                 }
 
                 Surface(
                     modifier = Modifier
-                        .size(36.dp)
+                        .size(38.dp)
                         .clip(CircleShape)
                         .clickable {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             onNextMonth()
                         },
                     shape = CircleShape,
-                    color = MaterialTheme.colorScheme.surface,
-                    shadowElevation = 1.dp
+                    color = if (isDark) Color(0xFF242834) else Color.White,
+                    border = BorderStroke(1.dp, if (isDark) Color(0xFF333A4A) else Color(0xFFE2E6EF))
                 ) {
                     Box(contentAlignment = Alignment.Center) {
                         Icon(
                             imageVector = Icons.AutoMirrored.Filled.ArrowForward,
                             contentDescription = "Следующий месяц",
-                            modifier = Modifier.size(16.dp),
-                            tint = MaterialTheme.colorScheme.onSurface
+                            modifier = Modifier.size(18.dp),
+                            tint = if (isDark) Color.White else Color(0xFF161922)
                         )
                     }
                 }
@@ -1216,15 +1467,14 @@ private fun MonthView(
                 Text(
                     text = name,
                     modifier = Modifier.weight(1f),
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold,
+                    style = MaterialTheme.typography.labelLarge,
+                    fontWeight = FontWeight.Bold,
                     color = MaterialTheme.colorScheme.secondary,
                     textAlign = TextAlign.Center
                 )
             }
         }
 
-        // Календарная сетка
         val firstDay = currentMonth.atDay(1)
         val startOffset = firstDay.dayOfWeek.value - 1
         val daysInMonth = currentMonth.lengthOfMonth()
@@ -1262,7 +1512,7 @@ private fun MonthView(
                                     .padding(3.dp)
                                     .clip(CircleShape)
                                     .background(
-                                        if (isToday) Accent else Color.Transparent
+                                        if (isToday) (if (isDark) AccentDark else Accent) else Color.Transparent
                                     )
                                     .clickable {
                                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -1273,16 +1523,16 @@ private fun MonthView(
                                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                                     Text(
                                         text = dayNum.toString(),
-                                        style = MaterialTheme.typography.bodyMedium,
+                                        style = MaterialTheme.typography.bodyLarge,
                                         color = if (isToday) Color.White else MaterialTheme.colorScheme.onBackground,
-                                        fontWeight = if (isToday) FontWeight.Bold else FontWeight.Medium
+                                        fontWeight = if (isToday) FontWeight.ExtraBold else FontWeight.Medium
                                     )
                                     if (hasLessons && !isToday) {
                                         Box(
                                             Modifier
-                                                .size(4.dp)
+                                                .size(5.dp)
                                                 .clip(CircleShape)
-                                                .background(SuccessMint)
+                                                .background(if (isDark) SuccessMintBright else SuccessMint)
                                         )
                                     }
                                 }
@@ -1298,21 +1548,22 @@ private fun MonthView(
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Статус-бар синхронизации (для совместимости)
+// Статус-бар синхронизации
 // ─────────────────────────────────────────────────────────────────────────────
 
 @Composable
 fun SyncStatusBar(status: String, isServer: Boolean, errorMessage: String? = null) {
+    val isDark = isSystemInDarkTheme()
     val color = when {
         errorMessage != null -> MaterialTheme.colorScheme.error
-        isServer             -> Accent
+        isServer             -> if (isDark) AccentDark else Accent
         else                 -> MaterialTheme.colorScheme.secondary
     }
     val displayText = errorMessage ?: status
 
     Surface(
         modifier = Modifier.fillMaxWidth(),
-        color = color.copy(alpha = 0.08f),
+        color = color.copy(alpha = 0.12f),
         tonalElevation = 0.dp
     ) {
         Row(
@@ -1328,7 +1579,12 @@ fun SyncStatusBar(status: String, isServer: Boolean, errorMessage: String? = nul
                     .background(color)
             )
             Spacer(Modifier.width(8.dp))
-            Text(displayText, style = MaterialTheme.typography.bodySmall, color = color)
+            Text(
+                displayText,
+                style = MaterialTheme.typography.bodyMedium,
+                fontWeight = FontWeight.Medium,
+                color = color
+            )
         }
     }
 }
