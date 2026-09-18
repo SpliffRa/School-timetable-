@@ -20,6 +20,7 @@ private val KEY_PIN                = stringPreferencesKey("editor_pin")
 private val KEY_LAST_VERSION       = longPreferencesKey("last_known_version")
 private val KEY_SYNC_CODE          = stringPreferencesKey("sync_code")
 private val KEY_FONT_SCALE          = floatPreferencesKey("font_scale")
+private val KEY_THEME_MODE          = stringPreferencesKey("theme_mode")
 
 class AppDataStore(private val context: Context) {
 
@@ -75,6 +76,15 @@ class AppDataStore(private val context: Context) {
     /** Масштаб шрифта в приложении (1.0f = 100%, 1.15f = 115%, 1.30f = 130%, 1.45f = 145%) */
     val fontScaleFlow: Flow<Float> = context.dataStore.data.map { prefs ->
         prefs[KEY_FONT_SCALE] ?: 1.0f
+    }
+
+    /** Тема оформления: "SYSTEM" (по умолчанию), "LIGHT", "DARK" */
+    val themeModeFlow: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[KEY_THEME_MODE] ?: "SYSTEM"
+    }
+
+    suspend fun saveThemeMode(mode: String) {
+        context.dataStore.edit { prefs -> prefs[KEY_THEME_MODE] = mode }
     }
 
     suspend fun saveFontScale(scale: Float) {

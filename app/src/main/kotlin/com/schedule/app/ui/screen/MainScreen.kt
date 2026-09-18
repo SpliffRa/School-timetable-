@@ -15,7 +15,6 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -92,6 +91,7 @@ import com.schedule.app.ui.theme.InnerBoxDarkBg
 import com.schedule.app.ui.theme.InnerBoxDarkBorder
 import com.schedule.app.ui.theme.InnerBoxLightBg
 import com.schedule.app.ui.theme.InnerBoxLightBorder
+import com.schedule.app.ui.theme.LocalIsDarkTheme
 import com.schedule.app.ui.theme.NeutralPill
 import com.schedule.app.ui.theme.NeutralPillBright
 import com.schedule.app.ui.theme.NeutralPillDarkBg
@@ -146,7 +146,7 @@ fun MainScreen(
     val isAdminMode by viewModel.isAdminMode.collectAsStateWithLifecycle()
     val fontScale   by viewModel.fontScaleFlow().collectAsStateWithLifecycle(initialValue = 1.0f)
 
-    val isDark = isSystemInDarkTheme()
+    val isDark = LocalIsDarkTheme.current
     val isParentMode = isAdminMode || deviceRole == "SERVER"
     val context = LocalContext.current
 
@@ -427,7 +427,7 @@ fun FontSizeSelectorDialog(
     onSelectScale: (Float) -> Unit,
     onDismiss: () -> Unit
 ) {
-    val isDark = isSystemInDarkTheme()
+    val isDark = LocalIsDarkTheme.current
     val options = listOf(
         1.00f to "Обычный (100%)",
         1.15f to "Средний (115%)",
@@ -533,7 +533,7 @@ fun AppleSegmentedControl(
     modifier: Modifier = Modifier
 ) {
     val haptic = LocalHapticFeedback.current
-    val isDark = isSystemInDarkTheme()
+    val isDark = LocalIsDarkTheme.current
 
     val containerColor = if (isDark) SegmentContainerDark else SegmentContainer
     val activeTabColor = if (isDark) Color(0xFF323846) else Color.White
@@ -604,7 +604,7 @@ private fun CloudSyncPill(
     onSyncClick: () -> Unit
 ) {
     val haptic = LocalHapticFeedback.current
-    val isDark = isSystemInDarkTheme()
+    val isDark = LocalIsDarkTheme.current
 
     val containerColor = when {
         hasError -> MaterialTheme.colorScheme.error.copy(alpha = 0.18f)
@@ -715,7 +715,7 @@ private fun DayHeader(
     nextEnabled: Boolean
 ) {
     val haptic = LocalHapticFeedback.current
-    val isDark = isSystemInDarkTheme()
+    val isDark = LocalIsDarkTheme.current
 
     Row(
         modifier = Modifier
@@ -835,7 +835,7 @@ private fun BackpackSummaryCard(
 ) {
     if (totalCount == 0) return
 
-    val isDark = isSystemInDarkTheme()
+    val isDark = LocalIsDarkTheme.current
     val progress = checkedCount.toFloat() / totalCount
     val isComplete = checkedCount == totalCount
     val percent = (progress * 100).toInt()
@@ -1066,7 +1066,7 @@ private fun LessonExpandableCard(
     isItemChecked: (String) -> Boolean,
     onToggleItem: (String) -> Unit
 ) {
-    val isDark = isSystemInDarkTheme()
+    val isDark = LocalIsDarkTheme.current
     val rotation by animateFloatAsState(
         targetValue = if (isExpanded) 180f else 0f,
         animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
@@ -1325,7 +1325,7 @@ private fun WeekDayCard(
     onClick: () -> Unit
 ) {
     val haptic = LocalHapticFeedback.current
-    val isDark = isSystemInDarkTheme()
+    val isDark = LocalIsDarkTheme.current
 
     val surfaceColor = if (isToday) {
         if (isDark) AccentDark.copy(alpha = 0.15f) else Accent.copy(alpha = 0.08f)
@@ -1466,7 +1466,7 @@ private fun MonthView(
     val today = LocalDate.now()
     val formatter = DateTimeFormatter.ofPattern("LLLL yyyy", Locale("ru"))
     val haptic = LocalHapticFeedback.current
-    val isDark = isSystemInDarkTheme()
+    val isDark = LocalIsDarkTheme.current
 
     Column(modifier = Modifier.fillMaxSize()) {
         Row(
@@ -1626,7 +1626,7 @@ private fun MonthView(
 
 @Composable
 fun SyncStatusBar(status: String, isServer: Boolean, errorMessage: String? = null) {
-    val isDark = isSystemInDarkTheme()
+    val isDark = LocalIsDarkTheme.current
     val color = when {
         errorMessage != null -> MaterialTheme.colorScheme.error
         isServer             -> if (isDark) AccentDark else Accent

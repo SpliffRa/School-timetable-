@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
@@ -89,10 +90,17 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     fun editorPinFlow() = dataStore.editorPinFlow
     fun syncCodeFlow() = dataStore.syncCodeFlow
     fun fontScaleFlow() = dataStore.fontScaleFlow
+    fun themeModeFlow() = dataStore.themeModeFlow
 
     fun saveFontScale(scale: Float) {
         viewModelScope.launch {
             dataStore.saveFontScale(scale)
+        }
+    }
+
+    fun saveThemeMode(mode: String) {
+        viewModelScope.launch {
+            dataStore.saveThemeMode(mode)
         }
     }
 
@@ -414,17 +422,46 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    /** Job периодической фоновой синхронизации (раз в минуту в активном приложении) */
+    private var periodicSyncJob: Job? = null
+
     /**
-     * Тихо проверяет наличие нового расписания в облаке в фоне
-     * (при запуске приложения или смене настроек).
+     * Вызывается при переходе приложения на передний план (foreground).
+     * Сразу же выполняет первую проверку синхронизации, а затем повторяет её
+     * с интервалом в 1 минуту (60 секунд), пока приложение открыто.
      */
-    fun checkCloudUpdateSilently() {
-        viewModelScope.launch {
+    fun onAppForegrounded() {
+        periodicSyncJob?.cancel()
+        periodicSyncJob = viewModelScope.launch {
+            while (isActive) {
+                checkSyncUpdateSilently()
+                delay(60_000L) // 1 минута
+            }
+        }
+    }
+
+    /**
+     * Вызывается при сворачивании приложения в фон.
+     * Приостанавливает периодическую синхронизацию для экономии батареи и трафика.
+     */
+    fun onAppBackgrounded() {
+        periodicSyncJob?.cancel()
+        periodicSyncJob = null
+    }
+
+    /**
+     * Тихо проверяет наличие обновлений в облаке:
+     * Для CLIENT — проверяет облако, скачивает новую версию, если папа обновил расписание.
+     * Для SERVER — проверяет актуальность версии в облаке и отправляет расписание при необходимости.
+     */
+    suspend fun checkSyncUpdateSilently() {
+        val role = _deviceRole.value
+        val syncCode = dataStore.syncCodeFlow.first()
+        if (role == "CLIENT") {
             try {
-                val syncCode = dataStore.syncCodeFlow.first()
                 val result = CloudSync.fetchSchedule(syncCode)
                 if (result.isSuccess) {
-                    val remote = result.getOrNull() ?: return@launch
+                    val remote = result.getOrNull() ?: return
                     val lastVersion = dataStore.lastKnownVersionFlow.first()
                     if (remote.version > lastVersion) {
                         val full = ensureAllDays(remote)
@@ -436,8 +473,30 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
             } catch (e: Exception) {
-                Log.w("MainViewModel", "Silent cloud update check failed: ${e.message}")
+                Log.d("MainViewModel", "Silent client sync: ${e.message}")
             }
+        } else if (role == "SERVER") {
+            try {
+                val current = (_uiState.value as? UiState.Success)?.schedule
+                if (current != null) {
+                    val cloudRes = CloudSync.fetchSchedule(syncCode)
+                    val remoteVersion = cloudRes.getOrNull()?.version ?: 0L
+                    if (current.version > remoteVersion) {
+                        CloudSync.uploadSchedule(syncCode, current)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.d("MainViewModel", "Silent server sync: ${e.message}")
+            }
+        }
+    }
+
+    /**
+     * Совместимость со старыми вызовами (при смене настроек или старте)
+     */
+    fun checkCloudUpdateSilently() {
+        viewModelScope.launch {
+            checkSyncUpdateSilently()
         }
     }
 

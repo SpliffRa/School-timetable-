@@ -5,7 +5,6 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -24,11 +23,14 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.filled.BrightnessAuto
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.FormatSize
+import androidx.compose.material.icons.filled.LightMode
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.Share
@@ -75,6 +77,7 @@ import com.schedule.app.ui.theme.InnerBoxDarkBg
 import com.schedule.app.ui.theme.InnerBoxDarkBorder
 import com.schedule.app.ui.theme.InnerBoxLightBg
 import com.schedule.app.ui.theme.InnerBoxLightBorder
+import com.schedule.app.ui.theme.LocalIsDarkTheme
 import com.schedule.app.ui.theme.SuccessMint
 import com.schedule.app.ui.theme.SuccessMintBright
 import kotlinx.coroutines.launch
@@ -89,8 +92,9 @@ fun SettingsScreen(
     val currentRole by viewModel.deviceRole.collectAsStateWithLifecycle()
     val currentSyncCode by viewModel.syncCodeFlow().collectAsStateWithLifecycle(initialValue = "Алиса-2026")
     val fontScale by viewModel.fontScaleFlow().collectAsStateWithLifecycle(initialValue = 1.0f)
+    val themeMode by viewModel.themeModeFlow().collectAsStateWithLifecycle(initialValue = "SYSTEM")
 
-    val isDark = isSystemInDarkTheme()
+    val isDark = LocalIsDarkTheme.current
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
@@ -99,6 +103,7 @@ fun SettingsScreen(
     var syncCodeSavedSuccess by remember { mutableStateOf(false) }
 
     // Диалоги
+    var showThemeDialog by remember { mutableStateOf(false) }
     var showFontSizeDialog by remember { mutableStateOf(false) }
     var showPasswordDialog by remember { mutableStateOf(false) }
     var passwordDialogError by remember { mutableStateOf(false) }
@@ -110,6 +115,7 @@ fun SettingsScreen(
     // Пошаговая кнопка «Назад»
     BackHandler {
         when {
+            showThemeDialog -> showThemeDialog = false
             showFontSizeDialog -> showFontSizeDialog = false
             showChangePinDialog -> showChangePinDialog = false
             showImportDialog -> showImportDialog = false
@@ -164,6 +170,18 @@ fun SettingsScreen(
                 showFontSizeDialog = false
             },
             onDismiss = { showFontSizeDialog = false }
+        )
+    }
+
+    // Диалог выбора темы оформления
+    if (showThemeDialog) {
+        ThemeSelectorDialog(
+            currentThemeMode = themeMode,
+            onSelectThemeMode = { newMode ->
+                viewModel.saveThemeMode(newMode)
+                showThemeDialog = false
+            },
+            onDismiss = { showThemeDialog = false }
         )
     }
 
@@ -455,6 +473,30 @@ fun SettingsScreen(
                 border = BorderStroke(1.dp, if (isDark) Color(0xFF2B303E) else Color(0xFFE2E6EF))
             ) {
                 Column {
+                    // Пункт: Тема оформления
+                    SettingsMenuItem(
+                        icon = when (themeMode) {
+                            "LIGHT" -> Icons.Filled.LightMode
+                            "DARK"  -> Icons.Filled.DarkMode
+                            else    -> Icons.Filled.BrightnessAuto
+                        },
+                        title = "Тема оформления",
+                        subtitle = "Светлая, тёмная или как в системе",
+                        badge = when (themeMode) {
+                            "LIGHT" -> "Светлая"
+                            "DARK"  -> "Тёмная"
+                            else    -> "Системная"
+                        },
+                        onClick = { showThemeDialog = true }
+                    )
+
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(1.dp)
+                            .background(if (isDark) Color(0xFF2B303E) else Color(0xFFE8ECF4))
+                    )
+
                     // Пункт: Размер шрифта
                     SettingsMenuItem(
                         icon = Icons.Filled.FormatSize,
@@ -557,7 +599,7 @@ fun SettingsScreen(
 
             // Версия
             Text(
-                text = "Версия 2.2 • Apple UI Design",
+                text = "Версия 2.4 • Apple UI Design",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.secondary.copy(alpha = 0.7f),
                 modifier = Modifier.align(Alignment.CenterHorizontally)
@@ -579,7 +621,7 @@ private fun SettingsMenuItem(
     badge: String? = null,
     onClick: () -> Unit
 ) {
-    val isDark = isSystemInDarkTheme()
+    val isDark = LocalIsDarkTheme.current
 
     Row(
         modifier = Modifier
@@ -796,6 +838,136 @@ private fun PasswordPromptDialog(
         dismissButton = {
             TextButton(onClick = onDismiss) {
                 Text("Отмена")
+            }
+        }
+    )
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Диалог выбора темы оформления (Системная / Светлая / Тёмная)
+// ─────────────────────────────────────────────────────────────────────────────
+
+@Composable
+fun ThemeSelectorDialog(
+    currentThemeMode: String,
+    onSelectThemeMode: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val isDark = LocalIsDarkTheme.current
+    val options = listOf(
+        Triple("SYSTEM", "Системная", "Следовать теме операционной системы"),
+        Triple("LIGHT", "Светлая", "Всегда светлая тема"),
+        Triple("DARK", "Тёмная", "Всегда тёмная тема")
+    )
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    when (currentThemeMode) {
+                        "LIGHT" -> Icons.Filled.LightMode
+                        "DARK"  -> Icons.Filled.DarkMode
+                        else    -> Icons.Filled.BrightnessAuto
+                    },
+                    contentDescription = null,
+                    tint = if (isDark) AccentDark else Accent,
+                    modifier = Modifier.size(24.dp)
+                )
+                Spacer(Modifier.width(10.dp))
+                Text(
+                    "Тема оформления",
+                    style = MaterialTheme.typography.titleLarge,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        },
+        text = {
+            Column(
+                modifier = Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Text(
+                    "Выберите оформление приложения:",
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.secondary
+                )
+
+                Spacer(Modifier.height(4.dp))
+
+                options.forEach { (mode, label, desc) ->
+                    val isSelected = currentThemeMode == mode
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(12.dp))
+                            .clickable { onSelectThemeMode(mode) },
+                        shape = RoundedCornerShape(12.dp),
+                        color = if (isSelected) {
+                            if (isDark) AccentDark.copy(alpha = 0.2f) else Accent.copy(alpha = 0.12f)
+                        } else {
+                            if (isDark) Color(0xFF242834) else Color(0xFFF3F5FA)
+                        },
+                        border = BorderStroke(
+                            1.5.dp,
+                            if (isSelected) (if (isDark) AccentDark else Accent) else Color.Transparent
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 14.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                when (mode) {
+                                    "LIGHT" -> Icons.Filled.LightMode
+                                    "DARK"  -> Icons.Filled.DarkMode
+                                    else    -> Icons.Filled.BrightnessAuto
+                                },
+                                contentDescription = null,
+                                tint = if (isSelected) {
+                                    if (isDark) AccentDark else Accent
+                                } else {
+                                    MaterialTheme.colorScheme.secondary
+                                },
+                                modifier = Modifier.size(22.dp)
+                            )
+                            Spacer(Modifier.width(12.dp))
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = label,
+                                    style = MaterialTheme.typography.bodyLarge,
+                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
+                                    color = if (isSelected) {
+                                        if (isDark) AccentDark else Accent
+                                    } else {
+                                        MaterialTheme.colorScheme.onSurface
+                                    }
+                                )
+                                Text(
+                                    text = desc,
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.secondary
+                                )
+                            }
+                            if (isSelected) {
+                                Icon(
+                                    Icons.Filled.Check,
+                                    contentDescription = "Выбрано",
+                                    tint = if (isDark) AccentDark else Accent,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        confirmButton = {},
+        dismissButton = {
+            TextButton(onClick = onDismiss) {
+                Text("Закрыть")
             }
         }
     )

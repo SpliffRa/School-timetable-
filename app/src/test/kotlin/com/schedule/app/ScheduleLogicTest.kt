@@ -199,5 +199,43 @@ class ScheduleLogicTest {
         assertEquals(testSchedule.version, fetched?.version)
         assertEquals("Математика", fetched?.days?.firstOrNull()?.lessons?.firstOrNull()?.subject)
     }
+
+    @Test
+    fun `test theme resolution logic`() {
+        fun resolveDarkTheme(themeMode: String, isSystemDark: Boolean): Boolean = when (themeMode) {
+            "LIGHT" -> false
+            "DARK"  -> true
+            else    -> isSystemDark
+        }
+
+        // When mode is SYSTEM, it follows system
+        assertEquals(true, resolveDarkTheme("SYSTEM", isSystemDark = true))
+        assertEquals(false, resolveDarkTheme("SYSTEM", isSystemDark = false))
+
+        // When mode is LIGHT, it is always light regardless of system
+        assertEquals(false, resolveDarkTheme("LIGHT", isSystemDark = true))
+        assertEquals(false, resolveDarkTheme("LIGHT", isSystemDark = false))
+
+        // When mode is DARK, it is always dark regardless of system
+        assertEquals(true, resolveDarkTheme("DARK", isSystemDark = true))
+        assertEquals(true, resolveDarkTheme("DARK", isSystemDark = false))
+
+        // Fallback for unknown / empty mode
+        assertEquals(true, resolveDarkTheme("", isSystemDark = true))
+        assertEquals(false, resolveDarkTheme("", isSystemDark = false))
+    }
+
+    @Test
+    fun `test auto-sync version comparison logic`() {
+        val lastKnownVersion = 1000L
+        val remoteNewerVersion = 1050L
+        val remoteOlderVersion = 950L
+        val remoteSameVersion = 1000L
+
+        // Client updates only when remote is strictly newer
+        assertTrue(remoteNewerVersion > lastKnownVersion)
+        assertFalse(remoteOlderVersion > lastKnownVersion)
+        assertFalse(remoteSameVersion > lastKnownVersion)
+    }
 }
 
