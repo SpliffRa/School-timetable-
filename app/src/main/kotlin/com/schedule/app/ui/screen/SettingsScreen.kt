@@ -588,7 +588,7 @@ fun SettingsScreen(
                                 }
                             }
 
-                            // Нижняя строка: сменить / ввести вручную
+                            // Нижняя строка: понятные действия
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
@@ -597,13 +597,13 @@ fun SettingsScreen(
                                 TextButton(onClick = { showScanDialog = true }) {
                                     Icon(Icons.Filled.QrCodeScanner, contentDescription = null, modifier = Modifier.size(16.dp))
                                     Spacer(Modifier.width(4.dp))
-                                    Text("Ввести другой код", style = MaterialTheme.typography.bodySmall)
+                                    Text("Подключиться к другой семье", style = MaterialTheme.typography.bodySmall)
                                 }
 
                                 TextButton(onClick = { showResetKeyConfirmDialog = true }) {
                                     Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
                                     Spacer(Modifier.width(4.dp))
-                                    Text("Сменить код", style = MaterialTheme.typography.bodySmall)
+                                    Text("Сбросить код", style = MaterialTheme.typography.bodySmall)
                                 }
                             }
                         }

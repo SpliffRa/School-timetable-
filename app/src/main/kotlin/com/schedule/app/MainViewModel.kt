@@ -20,6 +20,7 @@ import com.schedule.app.data.network.AppUpdateManager
 import com.schedule.app.data.network.AppUpdateNotificationHelper
 import com.schedule.app.data.network.CloudSync
 import com.schedule.app.data.network.SyncService
+import com.schedule.app.data.security.CryptoUtils
 import com.schedule.app.data.store.AppDataStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -436,6 +437,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             // Читаем роль
             val role = dataStore.deviceRoleFlow.first()
             _deviceRole.value = role
+
+            // Гарантируем, что у каждого пользователя сразу есть уникальный ключ семьи
+            val currentCode = dataStore.syncCodeFlow.first()
+            if (currentCode.isBlank() || !CryptoUtils.isValidFamilyKey(currentCode)) {
+                val newKey = CryptoUtils.generateFamilyKey()
+                dataStore.saveSyncCode(newKey)
+            }
 
             // Загружаем кэш
             val cachedJson = dataStore.cachedScheduleFlow.first()
