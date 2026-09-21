@@ -1,0 +1,8 @@
+{
+  "versionCode": 30,
+  "versionName": "2.8",
+  "downloadUrl": "https://github.com/SpliffRa/School-timetable-/releases/download/v2.8/app-debug.apk",
+  "releaseNotes": "Обновление 2.8: исправлен переход по дням в режиме «Месяц» (открытие любого числа, например 28-го), изолированное сохранение чек-листа рюкзака отдельно для каждого дня недели.",
+  "releaseDate": "2026-09-21",
+  "forceUpdate": false
+}

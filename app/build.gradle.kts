@@ -13,8 +13,8 @@ android {
         applicationId = "com.schedule.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 28
-        versionName = "2.6"
+        versionCode = 30
+        versionName = "2.8"
     }
 
     buildTypes {

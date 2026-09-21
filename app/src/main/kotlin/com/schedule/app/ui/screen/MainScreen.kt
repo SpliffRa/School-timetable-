@@ -14,6 +14,7 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -129,7 +130,7 @@ private fun todayIndex(): Int = LocalDate.now().dayOfWeek.value - 1
 private fun tomorrowIndex(): Int = LocalDate.now().dayOfWeek.value % 7
 
 // Шаг в истории навигации по расписанию
-private data class NavStep(val tab: Int, val dayIdx: Int)
+private data class NavStep(val tab: Int, val date: LocalDate)
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MainScreen
@@ -149,6 +150,7 @@ fun MainScreen(
     val syncError   by viewModel.syncError.collectAsStateWithLifecycle()
     val isAdminMode by viewModel.isAdminMode.collectAsStateWithLifecycle()
     val fontScale   by viewModel.fontScaleFlow().collectAsStateWithLifecycle(initialValue = 1.0f)
+    val backpackCheckedItems by viewModel.backpackCheckedItems.collectAsStateWithLifecycle()
 
     val isDark = LocalIsDarkTheme.current
     val isParentMode = isAdminMode || deviceRole == "SERVER"
@@ -156,24 +158,24 @@ fun MainScreen(
 
     val tabs = listOf("День", "Неделя", "Месяц")
     var selectedTab by remember { mutableStateOf(0) }
-    var selectedDayIdx by remember { mutableStateOf(tomorrowIndex().coerceIn(0, 6)) }
+    var selectedDate by remember { mutableStateOf(LocalDate.now().plusDays(1)) }
     var currentMonth by remember { mutableStateOf(YearMonth.now()) }
 
     var showFontSizeDialog by remember { mutableStateOf(false) }
 
-    // История переходов (вкладка + день)
-    val navHistory = remember { mutableStateListOf(NavStep(tab = 0, dayIdx = selectedDayIdx)) }
+    // История переходов (вкладка + дата)
+    val navHistory = remember { mutableStateListOf(NavStep(tab = 0, date = selectedDate)) }
 
     // Список раскрытых уроков (номера)
-    val expandedLessons = remember(selectedDayIdx, selectedTab) { mutableStateListOf<Int>() }
+    val expandedLessons = remember(selectedDate, selectedTab) { mutableStateListOf<Int>() }
 
     var lastBackPressTime by remember { mutableStateOf(0L) }
 
-    fun navigateTo(tab: Int, dayIdx: Int) {
-        if (selectedTab != tab || selectedDayIdx != dayIdx) {
+    fun navigateTo(tab: Int, date: LocalDate = selectedDate) {
+        if (selectedTab != tab || selectedDate != date) {
             selectedTab = tab
-            selectedDayIdx = dayIdx
-            navHistory.add(NavStep(tab, dayIdx))
+            selectedDate = date
+            navHistory.add(NavStep(tab, date))
         }
     }
 
@@ -193,7 +195,7 @@ fun MainScreen(
                 navHistory.removeAt(navHistory.lastIndex)
                 val prev = navHistory.last()
                 selectedTab = prev.tab
-                selectedDayIdx = prev.dayIdx
+                selectedDate = prev.date
             }
             // 4. Если мы на неделе или месяце без истории — возвращаемся на День
             selectedTab != 0 -> {
@@ -452,7 +454,10 @@ fun MainScreen(
                     items = tabs,
                     selectedIndex = selectedTab,
                     onItemSelected = { newTab ->
-                        navigateTo(tab = newTab, dayIdx = selectedDayIdx)
+                        if (newTab == 2) {
+                            currentMonth = YearMonth.from(selectedDate)
+                        }
+                        navigateTo(tab = newTab, date = selectedDate)
                     },
                     modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp)
                 )
@@ -510,26 +515,36 @@ fun MainScreen(
                 is UiState.Success -> when (selectedTab) {
                     0 -> DayView(
                         schedule = state.schedule,
-                        selectedDayIdx = selectedDayIdx,
+                        selectedDate = selectedDate,
                         expandedLessons = expandedLessons,
-                        onPrev = { if (selectedDayIdx > 0) navigateTo(0, selectedDayIdx - 1) },
-                        onNext = { if (selectedDayIdx < WEEK_DAYS.size - 1) navigateTo(0, selectedDayIdx + 1) }
+                        checkedItems = backpackCheckedItems,
+                        onToggleItem = { dayName, lessonNumber, item ->
+                            viewModel.toggleBackpackItem(dayName, lessonNumber, item)
+                        },
+                        onClearDayItems = { dayName ->
+                            viewModel.clearBackpackItemsForDay(dayName)
+                        },
+                        onPrev = { navigateTo(tab = 0, date = selectedDate.minusDays(1)) },
+                        onNext = { navigateTo(tab = 0, date = selectedDate.plusDays(1)) }
                     )
                     1 -> WeekView(
                         schedule = state.schedule,
                         todayIdx = todayIndex(),
                         onDayClick = { idx ->
-                            navigateTo(tab = 0, dayIdx = idx)
+                            val today = LocalDate.now()
+                            val currentMonday = today.minusDays((today.dayOfWeek.value - 1).toLong())
+                            val targetDate = currentMonday.plusDays(idx.toLong())
+                            navigateTo(tab = 0, date = targetDate)
                         }
                     )
                     2 -> MonthView(
                         schedule = state.schedule,
                         currentMonth = currentMonth,
+                        selectedDate = selectedDate,
                         onPrevMonth = { currentMonth = currentMonth.minusMonths(1) },
                         onNextMonth = { currentMonth = currentMonth.plusMonths(1) },
-                        onDayClick = { weekDayIdx ->
-                            val safeIdx = weekDayIdx.coerceIn(0, WEEK_DAYS.size - 1)
-                            navigateTo(tab = 0, dayIdx = safeIdx)
+                        onDayClick = { date ->
+                            navigateTo(tab = 0, date = date)
                         }
                     )
                 }
@@ -952,7 +967,8 @@ private fun DayHeader(
 @Composable
 private fun BackpackSummaryCard(
     checkedCount: Int,
-    totalCount: Int
+    totalCount: Int,
+    onClearDay: (() -> Unit)? = null
 ) {
     if (totalCount == 0) return
 
@@ -960,6 +976,30 @@ private fun BackpackSummaryCard(
     val progress = checkedCount.toFloat() / totalCount
     val isComplete = checkedCount == totalCount
     val percent = (progress * 100).toInt()
+    var showResetDialog by remember { mutableStateOf(false) }
+
+    if (showResetDialog) {
+        AlertDialog(
+            onDismissRequest = { showResetDialog = false },
+            title = { Text("Сбросить отметки?") },
+            text = { Text("Снять все отметки собранных вещей за этот день?") },
+            confirmButton = {
+                TextButton(
+                    onClick = {
+                        showResetDialog = false
+                        onClearDay?.invoke()
+                    }
+                ) {
+                    Text("Сбросить", color = MaterialTheme.colorScheme.error)
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showResetDialog = false }) {
+                    Text("Отмена")
+                }
+            }
+        )
+    }
 
     val animatedProgress by animateFloatAsState(
         targetValue = progress,
@@ -1024,6 +1064,22 @@ private fun BackpackSummaryCard(
 
                 Spacer(Modifier.width(8.dp))
 
+                // Кнопка сброса отметок дня (появляется только если что-то отмечено)
+                if (checkedCount > 0 && onClearDay != null) {
+                    IconButton(
+                        onClick = { showResetDialog = true },
+                        modifier = Modifier.size(36.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Filled.Refresh,
+                            contentDescription = "Сбросить отметки дня",
+                            tint = if (isDark) Color(0xFF9EAABF) else Color(0xFF6B7280),
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Spacer(Modifier.width(4.dp))
+                }
+
                 // Пилл-бейдж
                 Surface(
                     shape = RoundedCornerShape(12.dp),
@@ -1085,35 +1141,39 @@ private fun BackpackSummaryCard(
 @Composable
 private fun DayView(
     schedule: Schedule,
-    selectedDayIdx: Int,
+    selectedDate: LocalDate,
     expandedLessons: MutableList<Int>,
+    checkedItems: Set<String>,
+    onToggleItem: (dayName: String, lessonNumber: Int, item: String) -> Unit,
+    onClearDayItems: (dayName: String) -> Unit,
     onPrev: () -> Unit,
     onNext: () -> Unit
 ) {
-    val todayIdx = todayIndex()
-    val tomorrowIdx = tomorrowIndex()
-    val dayName  = WEEK_DAYS.getOrElse(selectedDayIdx) { WEEK_DAYS[0] }
-    val day      = schedule.days.find { it.name.trim().equals(dayName.trim(), ignoreCase = true) }
-
     val today = LocalDate.now()
-    val dayOffset = selectedDayIdx - todayIdx
-    val targetDate = today.plusDays(dayOffset.toLong())
-    val dateText = targetDate.format(DateTimeFormatter.ofPattern("d MMMM", Locale("ru")))
+    val weekDayIdx = (selectedDate.dayOfWeek.value - 1).coerceIn(0, WEEK_DAYS.size - 1)
+    val dayName  = WEEK_DAYS[weekDayIdx]
+    val day      = schedule.days.find { it.name.trim().equals(dayName.trim(), ignoreCase = true) }
+    val effectiveDayName = day?.name?.trim() ?: dayName.trim()
 
-    val tag = when (selectedDayIdx) {
-        todayIdx -> "Сегодня"
-        tomorrowIdx -> "На завтра"
+    val dateText = selectedDate.format(DateTimeFormatter.ofPattern("d MMMM", Locale("ru")))
+
+    val tag = when (selectedDate) {
+        today -> "Сегодня"
+        today.plusDays(1) -> "На завтра"
+        today.minusDays(1) -> "Вчера"
         else -> null
     }
 
     val lessons = day?.lessons?.sortedBy { it.number } ?: emptyList()
-    val checkedState = remember(selectedDayIdx) { mutableStateMapOf<String, Boolean>() }
+
+    fun itemKey(lessonNumber: Int, item: String): String =
+        "${effectiveDayName.lowercase()}_${lessonNumber}_${item.trim().lowercase()}"
 
     val allItemsKeys = lessons.flatMap { lesson ->
-        lesson.items.map { "${lesson.number}_$it" }
+        lesson.items.map { itemKey(lesson.number, it) }
     }
     val totalCount = allItemsKeys.size
-    val checkedCount = allItemsKeys.count { checkedState[it] == true }
+    val checkedCount = allItemsKeys.count { checkedItems.contains(it) }
 
     Column(modifier = Modifier.fillMaxSize()) {
         DayHeader(
@@ -1122,8 +1182,8 @@ private fun DayView(
             tag = tag,
             onPrev = onPrev,
             onNext = onNext,
-            prevEnabled = selectedDayIdx > 0,
-            nextEnabled = selectedDayIdx < WEEK_DAYS.size - 1
+            prevEnabled = true,
+            nextEnabled = true
         )
 
         if (lessons.isEmpty()) {
@@ -1142,7 +1202,8 @@ private fun DayView(
         } else {
             BackpackSummaryCard(
                 checkedCount = checkedCount,
-                totalCount = totalCount
+                totalCount = totalCount,
+                onClearDay = { onClearDayItems(effectiveDayName) }
             )
 
             LazyColumn(
@@ -1162,10 +1223,9 @@ private fun DayView(
                                 expandedLessons.add(lesson.number)
                             }
                         },
-                        isItemChecked = { item -> checkedState["${lesson.number}_$item"] ?: false },
+                        isItemChecked = { item -> checkedItems.contains(itemKey(lesson.number, item)) },
                         onToggleItem = { item ->
-                            val key = "${lesson.number}_$item"
-                            checkedState[key] = !(checkedState[key] ?: false)
+                            onToggleItem(effectiveDayName, lesson.number, item)
                         }
                     )
                 }
@@ -1580,9 +1640,10 @@ private fun WeekDayCard(
 private fun MonthView(
     schedule: Schedule,
     currentMonth: YearMonth,
+    selectedDate: LocalDate? = null,
     onPrevMonth: () -> Unit,
     onNextMonth: () -> Unit,
-    onDayClick: (Int) -> Unit
+    onDayClick: (LocalDate) -> Unit
 ) {
     val today = LocalDate.now()
     val formatter = DateTimeFormatter.ofPattern("LLLL yyyy", Locale("ru"))
@@ -1693,6 +1754,7 @@ private fun MonthView(
                         } else {
                             val date = currentMonth.atDay(dayNum)
                             val isToday = date == today
+                            val isSelected = selectedDate != null && date == selectedDate
                             val dayName = WEEK_DAYS.getOrElse(col) { "" }
                             val hasLessons = schedule.days.any {
                                 it.name.trim().equals(dayName.trim(), ignoreCase = true)
@@ -1706,11 +1768,20 @@ private fun MonthView(
                                     .padding(3.dp)
                                     .clip(CircleShape)
                                     .background(
-                                        if (isToday) (if (isDark) AccentDark else Accent) else Color.Transparent
+                                        when {
+                                            isToday -> if (isDark) AccentDark else Accent
+                                            isSelected -> if (isDark) AccentDark.copy(alpha = 0.25f) else Accent.copy(alpha = 0.15f)
+                                            else -> Color.Transparent
+                                        }
+                                    )
+                                    .then(
+                                        if (isSelected && !isToday) {
+                                            Modifier.border(1.5.dp, if (isDark) AccentDark else Accent, CircleShape)
+                                        } else Modifier
                                     )
                                     .clickable {
                                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                                        onDayClick(weekDayIdx)
+                                        onDayClick(date)
                                     },
                                 contentAlignment = Alignment.Center
                             ) {
@@ -1719,7 +1790,7 @@ private fun MonthView(
                                         text = dayNum.toString(),
                                         style = MaterialTheme.typography.bodyLarge,
                                         color = if (isToday) Color.White else MaterialTheme.colorScheme.onBackground,
-                                        fontWeight = if (isToday) FontWeight.ExtraBold else FontWeight.Medium
+                                        fontWeight = if (isToday || isSelected) FontWeight.ExtraBold else FontWeight.Medium
                                     )
                                     if (hasLessons && !isToday) {
                                         Box(

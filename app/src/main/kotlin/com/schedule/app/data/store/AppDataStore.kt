@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
@@ -21,6 +22,7 @@ private val KEY_LAST_VERSION       = longPreferencesKey("last_known_version")
 private val KEY_SYNC_CODE          = stringPreferencesKey("sync_code")
 private val KEY_FONT_SCALE          = floatPreferencesKey("font_scale")
 private val KEY_THEME_MODE          = stringPreferencesKey("theme_mode")
+private val KEY_BACKPACK_CHECKED    = stringSetPreferencesKey("backpack_checked_items")
 
 class AppDataStore(private val context: Context) {
 
@@ -83,6 +85,11 @@ class AppDataStore(private val context: Context) {
         prefs[KEY_THEME_MODE] ?: "SYSTEM"
     }
 
+    /** Набор ключей собранных вещей в рюкзак (формат: "день_номерУрока_названиеВещи") */
+    val backpackCheckedItemsFlow: Flow<Set<String>> = context.dataStore.data.map { prefs ->
+        prefs[KEY_BACKPACK_CHECKED] ?: emptySet()
+    }
+
     suspend fun saveThemeMode(mode: String) {
         context.dataStore.edit { prefs -> prefs[KEY_THEME_MODE] = mode }
     }
@@ -124,5 +131,25 @@ class AppDataStore(private val context: Context) {
 
     suspend fun saveSyncCode(code: String) {
         context.dataStore.edit { prefs -> prefs[KEY_SYNC_CODE] = code.trim() }
+    }
+
+    suspend fun toggleBackpackItem(itemKey: String) {
+        context.dataStore.edit { prefs ->
+            val current = prefs[KEY_BACKPACK_CHECKED]?.toMutableSet() ?: mutableSetOf()
+            if (current.contains(itemKey)) {
+                current.remove(itemKey)
+            } else {
+                current.add(itemKey)
+            }
+            prefs[KEY_BACKPACK_CHECKED] = current
+        }
+    }
+
+    suspend fun clearBackpackItemsForDay(dayPrefix: String) {
+        context.dataStore.edit { prefs ->
+            val current = prefs[KEY_BACKPACK_CHECKED]?.toMutableSet() ?: mutableSetOf()
+            current.removeAll { it.startsWith(dayPrefix) }
+            prefs[KEY_BACKPACK_CHECKED] = current
+        }
     }
 }

@@ -262,5 +262,115 @@ class ScheduleLogicTest {
         assertTrue("Version 25 must be detected as an update over 24", parsed.versionCode > currentVersion)
         assertFalse("Version 24 must not trigger update", currentVersion > parsed.versionCode)
     }
+
+    @Test
+    fun `test backpack checklist key generation isolates days`() {
+        fun makeKey(dayName: String, lessonNumber: Int, item: String) =
+            "${dayName.trim().lowercase()}_${lessonNumber}_${item.trim().lowercase()}"
+
+        val mondayKey = makeKey("Понедельник", 1, "Учебник")
+        val tuesdayKey = makeKey("Вторник", 1, "Учебник")
+        val wednesdayKey = makeKey("Среда", 1, "Учебник")
+
+        assertEquals("понедельник_1_учебник", mondayKey)
+        assertEquals("вторник_1_учебник", tuesdayKey)
+        assertEquals("среда_1_учебник", wednesdayKey)
+
+        // Different days must have strictly distinct keys even with identical lesson number and item
+        assertTrue(mondayKey != tuesdayKey)
+        assertTrue(tuesdayKey != wednesdayKey)
+        assertTrue(mondayKey != wednesdayKey)
+    }
+
+    @Test
+    fun `test backpack checklist state persists across day navigation without cross-day leakage`() {
+        fun makeKey(dayName: String, lessonNumber: Int, item: String) =
+            "${dayName.trim().lowercase()}_${lessonNumber}_${item.trim()}"
+
+        val checkedSet = mutableSetOf<String>()
+
+        fun toggleItem(dayName: String, lessonNumber: Int, item: String) {
+            val key = makeKey(dayName, lessonNumber, item)
+            if (checkedSet.contains(key)) checkedSet.remove(key) else checkedSet.add(key)
+        }
+
+        fun isChecked(dayName: String, lessonNumber: Int, item: String): Boolean {
+            return checkedSet.contains(makeKey(dayName, lessonNumber, item))
+        }
+
+        // Child marks items on Monday
+        toggleItem("Понедельник", 1, "Учебник")
+        toggleItem("Понедельник", 1, "Тетрадь")
+
+        // Check Monday
+        assertTrue("Monday Учебник must be checked", isChecked("Понедельник", 1, "Учебник"))
+        assertTrue("Monday Тетрадь must be checked", isChecked("Понедельник", 1, "Тетрадь"))
+
+        // Navigate to Tuesday: items on Tuesday must NOT be checked!
+        assertFalse("Tuesday Учебник must NOT be checked", isChecked("Вторник", 1, "Учебник"))
+        assertFalse("Tuesday Тетрадь must NOT be checked", isChecked("Вторник", 1, "Тетрадь"))
+
+        // Child marks an item on Tuesday
+        toggleItem("Вторник", 1, "Пенал")
+        assertTrue("Tuesday Пенал must be checked", isChecked("Вторник", 1, "Пенал"))
+
+        // Navigate back to Monday: Monday items MUST STILL BE CHECKED!
+        assertTrue("Monday Учебник must still be checked after returning from Tuesday", isChecked("Понедельник", 1, "Учебник"))
+        assertTrue("Monday Тетрадь must still be checked after returning from Tuesday", isChecked("Понедельник", 1, "Тетрадь"))
+        assertFalse("Monday must not have Tuesday items", isChecked("Понедельник", 1, "Пенал"))
+    }
+
+    @Test
+    fun `test backpack checklist clearing for a single day`() {
+        fun makeKey(dayName: String, lessonNumber: Int, item: String) =
+            "${dayName.trim().lowercase()}_${lessonNumber}_${item.trim()}"
+
+        val checkedSet = mutableSetOf(
+            makeKey("Понедельник", 1, "Учебник"),
+            makeKey("Понедельник", 2, "Краски"),
+            makeKey("Вторник", 1, "Тетрадь"),
+            makeKey("Среда", 1, "Форма")
+        )
+
+        fun clearDay(dayName: String) {
+            val prefix = "${dayName.trim().lowercase()}_"
+            checkedSet.removeAll { it.startsWith(prefix) }
+        }
+
+        clearDay("Понедельник")
+
+        // Monday items removed
+        assertFalse(checkedSet.contains(makeKey("Понедельник", 1, "Учебник")))
+        assertFalse(checkedSet.contains(makeKey("Понедельник", 2, "Краски")))
+
+        // Tuesday and Wednesday preserved
+        assertTrue(checkedSet.contains(makeKey("Вторник", 1, "Тетрадь")))
+        assertTrue(checkedSet.contains(makeKey("Среда", 1, "Форма")))
+    }
+
+    @Test
+    fun `test month day click correctly resolves date and week day mapping`() {
+        val weekDays = listOf(
+            "Понедельник", "Вторник", "Среда", "Четверг", "Пятница", "Суббота", "Воскресенье"
+        )
+        val month = java.time.YearMonth.of(2026, 9)
+
+        // September 28, 2026 is a Monday
+        val day28 = month.atDay(28)
+        assertEquals(28, day28.dayOfMonth)
+        assertEquals(java.time.DayOfWeek.MONDAY, day28.dayOfWeek)
+        val weekDayIdx = day28.dayOfWeek.value - 1
+        assertEquals(0, weekDayIdx)
+        assertEquals("Понедельник", weekDays[weekDayIdx])
+
+        val formatter = java.time.format.DateTimeFormatter.ofPattern("d MMMM", java.util.Locale("ru"))
+        assertEquals("28 сентября", day28.format(formatter))
+
+        // September 30, 2026 is a Wednesday
+        val day30 = month.atDay(30)
+        assertEquals(java.time.DayOfWeek.WEDNESDAY, day30.dayOfWeek)
+        assertEquals("Среда", weekDays[day30.dayOfWeek.value - 1])
+        assertEquals("30 сентября", day30.format(formatter))
+    }
 }
 

@@ -109,6 +109,36 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _syncError = MutableStateFlow<String?>(null)
     val syncError: StateFlow<String?> = _syncError.asStateFlow()
 
+    /** Набор ключей собранных вещей в рюкзак (изолированно для каждого дня недели) */
+    private val _backpackCheckedItems = MutableStateFlow<Set<String>>(emptySet())
+    val backpackCheckedItems: StateFlow<Set<String>> = _backpackCheckedItems.asStateFlow()
+
+    fun toggleBackpackItem(dayName: String, lessonNumber: Int, item: String) {
+        val key = "${dayName.trim().lowercase()}_${lessonNumber}_${item.trim().lowercase()}"
+        val current = _backpackCheckedItems.value.toMutableSet()
+        if (current.contains(key)) {
+            current.remove(key)
+        } else {
+            current.add(key)
+        }
+        _backpackCheckedItems.value = current
+
+        viewModelScope.launch(Dispatchers.IO) {
+            dataStore.toggleBackpackItem(key)
+        }
+    }
+
+    fun clearBackpackItemsForDay(dayName: String) {
+        val prefix = "${dayName.trim().lowercase()}_"
+        val current = _backpackCheckedItems.value.toMutableSet()
+        current.removeAll { it.startsWith(prefix) }
+        _backpackCheckedItems.value = current
+
+        viewModelScope.launch(Dispatchers.IO) {
+            dataStore.clearBackpackItemsForDay(prefix)
+        }
+    }
+
     /** Доступ к настройкам (для экрана Settings) */
     fun deviceRoleFlow() = dataStore.deviceRoleFlow
     fun deviceNameFlow() = dataStore.deviceNameFlow
@@ -408,6 +438,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun loadInitialState() {
         viewModelScope.launch {
+            // Подписываемся на сохранённые отметки рюкзака
+            launch {
+                dataStore.backpackCheckedItemsFlow.collect { items ->
+                    _backpackCheckedItems.value = items
+                }
+            }
+
             // Читаем роль
             val role = dataStore.deviceRoleFlow.first()
             _deviceRole.value = role

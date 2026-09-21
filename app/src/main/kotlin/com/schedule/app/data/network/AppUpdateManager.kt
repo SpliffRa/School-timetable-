@@ -28,10 +28,18 @@ import java.io.File
 import java.io.FileOutputStream
 
 private const val TAG = "AppUpdateManager"
-private const val UPDATE_ENDPOINT = "https://mantledb.sh/v2/sch-app-updates/latest"
+
+// Настройки репозитория GitHub для раздачи обновлений
+private const val GITHUB_OWNER = "SpliffRa"
+private const val GITHUB_REPO = "School-timetable-"
+
+// Основной эндпоинт метаданных на GitHub (CDN Fastly, без лимитов скорости и API)
+private const val PRIMARY_UPDATE_ENDPOINT = "https://raw.githubusercontent.com/$GITHUB_OWNER/$GITHUB_REPO/main/version.json"
+private const val FALLBACK_MASTER_ENDPOINT = "https://raw.githubusercontent.com/$GITHUB_OWNER/$GITHUB_REPO/master/version.json"
+private const val LEGACY_ENDPOINT = "https://mantledb.sh/v2/sch-app-updates/latest"
 
 /**
- * Модель данных обновления приложения, хранящаяся в защищённом облаке.
+ * Модель данных обновления приложения, хранящаяся на GitHub.
  */
 @Serializable
 data class AppUpdateInfo(
@@ -50,8 +58,9 @@ object AppUpdateManager {
         isLenient = true
     }
 
-    // Отдельный клиент с расширенным таймаутом для скачивания больших файлов APK
+    // Отдельный клиент с расширенным таймаутом и следованием редиректам (для GitHub Releases / AWS S3)
     private val downloadClient = HttpClient(OkHttp) {
+        followRedirects = true
         install(HttpTimeout) {
             requestTimeoutMillis = 600_000L // 10 минут на скачивание
             connectTimeoutMillis = 30_000L
@@ -60,29 +69,36 @@ object AppUpdateManager {
     }
 
     /**
-     * Проверяет облако на наличие новой версии приложения.
-     * @return AppUpdateInfo если версия в облаке > текущей (BuildConfig.VERSION_CODE),
+     * Запрашивает текст из списка эндпоинтов по очереди.
+     */
+    private suspend fun fetchRemoteJsonText(): String? {
+        val endpoints = listOf(PRIMARY_UPDATE_ENDPOINT, FALLBACK_MASTER_ENDPOINT, LEGACY_ENDPOINT)
+        for (endpoint in endpoints) {
+            try {
+                val response = httpClient.get(endpoint)
+                if (response.status.isSuccess()) {
+                    val body = response.bodyAsText().trim()
+                    if (body.isNotBlank() && !body.contains("\"error\":") && body.contains("\"versionCode\":")) {
+                        Log.d(TAG, "Update metadata fetched successfully from: $endpoint")
+                        return body
+                    }
+                }
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed to fetch update metadata from $endpoint: ${e.message}")
+            }
+        }
+        return null
+    }
+
+    /**
+     * Проверяет наличие новой версии приложения на GitHub.
+     * @return AppUpdateInfo если версия на сервере > текущей (BuildConfig.VERSION_CODE),
      *         null если установлена актуальная версия.
      */
     suspend fun checkForUpdate(): Result<AppUpdateInfo?> = withContext(Dispatchers.IO) {
         try {
-            val response = httpClient.get(UPDATE_ENDPOINT)
-            if (response.status == HttpStatusCode.NotFound) {
-                return@withContext Result.success(null)
-            }
-            if (!response.status.isSuccess()) {
-                val body = response.bodyAsText()
-                if (body.contains("Path not found", ignoreCase = true) ||
-                    body.contains("not found", ignoreCase = true)) {
-                    return@withContext Result.success(null)
-                }
-                return@withContext Result.failure(Exception("Ошибка сервера: ${response.status.value}"))
-            }
-
-            val body = response.bodyAsText()
-            if (body.isBlank() || body.contains("\"error\":")) {
-                return@withContext Result.success(null)
-            }
+            val body = fetchRemoteJsonText()
+                ?: return@withContext Result.success(null)
 
             val updateInfo = json.decodeFromString<AppUpdateInfo>(body)
             val currentVersionCode = BuildConfig.VERSION_CODE
@@ -104,10 +120,8 @@ object AppUpdateManager {
      */
     suspend fun fetchLatestRemoteInfo(): Result<AppUpdateInfo?> = withContext(Dispatchers.IO) {
         try {
-            val response = httpClient.get(UPDATE_ENDPOINT)
-            if (response.status == HttpStatusCode.NotFound) return@withContext Result.success(null)
-            val body = response.bodyAsText()
-            if (body.isBlank() || body.contains("\"error\":")) return@withContext Result.success(null)
+            val body = fetchRemoteJsonText()
+                ?: return@withContext Result.success(null)
             Result.success(json.decodeFromString<AppUpdateInfo>(body))
         } catch (e: Exception) {
             Result.failure(e)
@@ -115,17 +129,17 @@ object AppUpdateManager {
     }
 
     /**
-     * Публикует информацию о новой версии APK в облако.
+     * Публикует информацию о новой версии APK в резервное облако.
      */
     suspend fun publishUpdate(info: AppUpdateInfo): Result<Boolean> = withContext(Dispatchers.IO) {
         try {
             val payload = json.encodeToString(info)
-            val response = httpClient.post(UPDATE_ENDPOINT) {
+            val response = httpClient.post(LEGACY_ENDPOINT) {
                 contentType(ContentType.Application.Json)
                 setBody(payload)
             }
             if (response.status.isSuccess()) {
-                Log.d(TAG, "Update published: v${info.versionName} (${info.versionCode})")
+                Log.d(TAG, "Update published to legacy backup: v${info.versionName} (${info.versionCode})")
                 Result.success(true)
             } else {
                 Result.failure(Exception("Ошибка публикации: ${response.status.value}"))
