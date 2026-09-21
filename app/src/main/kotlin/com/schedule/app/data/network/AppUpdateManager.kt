@@ -69,13 +69,16 @@ object AppUpdateManager {
      */
     private suspend fun fetchRemoteJsonText(): String? {
         val endpoints = listOf(PRIMARY_UPDATE_ENDPOINT, JSDELIVR_UPDATE_ENDPOINT, FALLBACK_MASTER_ENDPOINT)
+        val now = System.currentTimeMillis()
         for (endpoint in endpoints) {
             try {
-                val response = httpClient.get(endpoint)
+                val separator = if (endpoint.contains("?")) "&" else "?"
+                val cacheBustedUrl = "$endpoint${separator}_t=$now"
+                val response = httpClient.get(cacheBustedUrl)
                 if (response.status.isSuccess()) {
                     val body = response.bodyAsText().trim()
                     if (body.isNotBlank() && !body.contains("\"error\":") && body.contains("\"versionCode\":")) {
-                        Log.d(TAG, "Update metadata fetched successfully from: $endpoint")
+                        Log.d(TAG, "Update metadata fetched successfully from: $cacheBustedUrl")
                         return body
                     }
                 }
