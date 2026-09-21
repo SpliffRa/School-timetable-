@@ -99,7 +99,7 @@ object AppUpdateManager {
     suspend fun checkForUpdate(): Result<AppUpdateInfo?> = withContext(Dispatchers.IO) {
         try {
             val body = fetchRemoteJsonText()
-                ?: return@withContext Result.success(null)
+                ?: return@withContext Result.failure(Exception("Не удалось связаться с сервером обновлений. Проверьте подключение к сети."))
 
             val updateInfo = json.decodeFromString<AppUpdateInfo>(body)
             val currentVersionCode = BuildConfig.VERSION_CODE

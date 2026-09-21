@@ -269,8 +269,20 @@ fun AppUpdateDialog(
                     }
                 }
                 is UpdateUiState.UpToDate -> {
-                    Button(onClick = onDismiss) {
-                        Text("Отлично")
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = {
+                            try {
+                                val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/SpliffRa/School-timetable-/releases/latest")).apply {
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                context.startActivity(browserIntent)
+                            } catch (_: Exception) {}
+                        }) {
+                            Text("Скачать APK")
+                        }
+                        Button(onClick = onDismiss) {
+                            Text("Отлично")
+                        }
                     }
                 }
                 is UpdateUiState.Error -> {
