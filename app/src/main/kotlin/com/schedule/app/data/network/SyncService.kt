@@ -158,10 +158,12 @@ class SyncService : Service() {
             try {
                 val schedule = json.decodeFromString<com.schedule.app.data.model.Schedule>(cachedJson)
                 scheduleServer.updateSchedule(schedule)
-                // Также сразу синхронизируем с облаком
+                // Также сразу синхронизируем с облаком если задан код семьи
                 serviceScope.launch {
                     val syncCode = dataStore.syncCodeFlow.first()
-                    CloudSync.uploadSchedule(syncCode, schedule)
+                    if (syncCode.isNotBlank()) {
+                        CloudSync.uploadSchedule(syncCode, schedule)
+                    }
                 }
             } catch (_: Exception) {}
         }
@@ -228,7 +230,7 @@ class SyncService : Service() {
 
     /**
      * Фоновый опрос облачного хранилища каждые 40 секунд.
-     * Работает даже когда телефон папы выключен или находится вне дома.
+     * Работает автономно через интернет между устройствами семьи.
      */
     private fun startCloudPolling() {
         cloudPollJob?.cancel()
@@ -236,21 +238,23 @@ class SyncService : Service() {
             while (true) {
                 try {
                     val syncCode = dataStore.syncCodeFlow.first()
-                    val result = CloudSync.fetchSchedule(syncCode)
-                    if (result.isSuccess) {
-                        val remote = result.getOrNull()
-                        val lastVersion = dataStore.lastKnownVersionFlow.first()
-                        if (remote != null && remote.version > lastVersion) {
-                            Log.d(TAG, "Cloud update found: $lastVersion → ${remote.version}")
-                            val scheduleJson = json.encodeToString(remote)
-                            dataStore.saveCache(scheduleJson)
-                            dataStore.saveLastKnownVersion(remote.version)
+                    if (syncCode.isNotBlank()) {
+                        val result = CloudSync.fetchSchedule(syncCode)
+                        if (result.isSuccess) {
+                            val remote = result.getOrNull()
+                            val lastVersion = dataStore.lastKnownVersionFlow.first()
+                            if (remote != null && remote.version > lastVersion) {
+                                Log.d(TAG, "Cloud update found: $lastVersion → ${remote.version}")
+                                val scheduleJson = json.encodeToString(remote)
+                                dataStore.saveCache(scheduleJson)
+                                dataStore.saveLastKnownVersion(remote.version)
 
-                            sendBroadcast(Intent(BROADCAST_SCHEDULE_UPDATED).apply {
-                                `package` = applicationContext.packageName
-                                putExtra(EXTRA_SCHEDULE_JSON, scheduleJson)
-                            })
-                            showUpdateNotification()
+                                sendBroadcast(Intent(BROADCAST_SCHEDULE_UPDATED).apply {
+                                    `package` = applicationContext.packageName
+                                    putExtra(EXTRA_SCHEDULE_JSON, scheduleJson)
+                                })
+                                showUpdateNotification()
+                            }
                         }
                     }
                 } catch (e: Exception) {
@@ -312,7 +316,9 @@ class SyncService : Service() {
             // Отправляем в облако
             serviceScope.launch {
                 val syncCode = dataStore.syncCodeFlow.first()
-                CloudSync.uploadSchedule(syncCode, schedule)
+                if (syncCode.isNotBlank()) {
+                    CloudSync.uploadSchedule(syncCode, schedule)
+                }
             }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to update server schedule: ${e.message}")

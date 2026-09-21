@@ -70,9 +70,9 @@ class AppDataStore(private val context: Context) {
         prefs[KEY_LAST_VERSION] ?: 0L
     }
 
-    /** Код семьи для облачной синхронизации (по умолчанию "Семья-2026") */
+    /** Код семьи для облачной синхронизации (по умолчанию пуст, пользователь задаёт индивидуальный код) */
     val syncCodeFlow: Flow<String> = context.dataStore.data.map { prefs ->
-        prefs[KEY_SYNC_CODE]?.takeIf { it.isNotBlank() } ?: "Семья-2026"
+        prefs[KEY_SYNC_CODE]?.trim() ?: ""
     }
 
     /** Масштаб шрифта в приложении (1.0f = 100%, 1.15f = 115%, 1.30f = 130%, 1.45f = 145%) */

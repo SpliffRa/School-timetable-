@@ -1,8 +1,8 @@
 {
-  "versionCode": 31,
-  "versionName": "2.9",
-  "downloadUrl": "https://github.com/SpliffRa/School-timetable-/releases/download/v2.9/SchoolSchedule-v2.9.apk",
-  "releaseNotes": "Обновление 2.9: изоляция чек-листа рюкзака по точным календарным датам (отметки на завтра не переносятся на другие недели).",
+  "versionCode": 32,
+  "versionName": "3.0",
+  "downloadUrl": "https://github.com/SpliffRa/School-timetable-/releases/download/v3.0/SchoolSchedule-v3.0.apk",
+  "releaseNotes": "Обновление 3.0: переход на индивидуальный код семьи для облачной синхронизации, удаление общих кодов по умолчанию, повышение безопасности и приватности.",
   "releaseDate": "2026-09-21",
   "forceUpdate": false
 }

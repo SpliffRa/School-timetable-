@@ -89,6 +89,8 @@ import com.schedule.app.ui.theme.InnerBoxDarkBorder
 import com.schedule.app.ui.theme.InnerBoxLightBg
 import com.schedule.app.ui.theme.InnerBoxLightBorder
 import com.schedule.app.ui.theme.LocalIsDarkTheme
+import com.schedule.app.ui.theme.PendingAmber
+import com.schedule.app.ui.theme.PendingAmberBright
 import com.schedule.app.ui.theme.SuccessMint
 import com.schedule.app.ui.theme.SuccessMintBright
 import kotlinx.coroutines.launch
@@ -102,7 +104,7 @@ fun SettingsScreen(
     onNavigateToEditor: () -> Unit = {}
 ) {
     val currentRole by viewModel.deviceRole.collectAsStateWithLifecycle()
-    val currentSyncCode by viewModel.syncCodeFlow().collectAsStateWithLifecycle(initialValue = "Семья-2026")
+    val currentSyncCode by viewModel.syncCodeFlow().collectAsStateWithLifecycle(initialValue = "")
     val fontScale by viewModel.fontScaleFlow().collectAsStateWithLifecycle(initialValue = 1.0f)
     val themeMode by viewModel.themeModeFlow().collectAsStateWithLifecycle(initialValue = "SYSTEM")
 
@@ -116,6 +118,7 @@ fun SettingsScreen(
     var selectedTab by remember(currentRole) { mutableStateOf(currentRole) }
     var familySyncCode by remember(currentSyncCode) { mutableStateOf(currentSyncCode) }
     var syncCodeSavedSuccess by remember { mutableStateOf(false) }
+    var syncCodeValidationError by remember { mutableStateOf<String?>(null) }
 
     // Диалоги
     var showThemeDialog by remember { mutableStateOf(false) }
@@ -320,15 +323,43 @@ fun SettingsScreen(
                         Spacer(Modifier.width(12.dp))
                         Column {
                             Text(
-                                text = "Код семьи (Синхронизация)",
+                                text = "Индивидуальный код семьи",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = "Связывает телефон и планшет через интернет",
+                                text = "Связывает телефон и планшет через облако",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.secondary
+                            )
+                        }
+                    }
+
+                    Spacer(Modifier.height(12.dp))
+
+                    // Блок с обязательным напоминанием об индивидуальности кода
+                    Surface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        color = if (isDark) InnerBoxDarkBg else InnerBoxLightBg,
+                        border = BorderStroke(1.dp, if (isDark) InnerBoxDarkBorder else InnerBoxLightBorder)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(12.dp),
+                            verticalAlignment = Alignment.Top
+                        ) {
+                            Icon(
+                                Icons.Filled.Lock,
+                                contentDescription = null,
+                                tint = if (isDark) AccentDark else Accent,
+                                modifier = Modifier.size(20.dp)
+                            )
+                            Spacer(Modifier.width(10.dp))
+                            Text(
+                                text = "Код семьи должен быть строго индивидуальным и уникальным (придумайте своё секретное слово или комбинацию). Укажите один и тот же код на телефоне родителя и планшете ребёнка. Это защитит ваше расписание от совпадений с другими семьями.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurface
                             )
                         }
                     }
@@ -344,18 +375,26 @@ fun SettingsScreen(
                             onValueChange = {
                                 familySyncCode = it
                                 syncCodeSavedSuccess = false
+                                syncCodeValidationError = null
                             },
-                            label = { Text("Код семьи") },
-                            placeholder = { Text("Семья-2026") },
+                            label = { Text("Индивидуальный код семьи") },
+                            placeholder = { Text("Придумайте уникальный код") },
                             singleLine = true,
+                            isError = syncCodeValidationError != null,
                             modifier = Modifier.weight(1f)
                         )
                         Spacer(Modifier.width(8.dp))
                         Button(
                             onClick = {
-                                val code = familySyncCode.trim().ifBlank { "Семья-2026" }
-                                viewModel.saveSyncCode(code)
-                                syncCodeSavedSuccess = true
+                                val code = familySyncCode.trim()
+                                if (code.isBlank()) {
+                                    syncCodeValidationError = "Введите индивидуальный код семьи"
+                                    syncCodeSavedSuccess = false
+                                } else {
+                                    syncCodeValidationError = null
+                                    viewModel.saveSyncCode(code)
+                                    syncCodeSavedSuccess = true
+                                }
                             },
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier.height(56.dp)
@@ -366,7 +405,15 @@ fun SettingsScreen(
                         }
                     }
 
-                    if (syncCodeSavedSuccess) {
+                    if (syncCodeValidationError != null) {
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = syncCodeValidationError ?: "",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.error,
+                            fontWeight = FontWeight.Medium
+                        )
+                    } else if (syncCodeSavedSuccess) {
                         Spacer(Modifier.height(6.dp))
                         Text(
                             text = "Код сохранён ✓ Расписание будет обновляться автоматически.",
@@ -374,10 +421,18 @@ fun SettingsScreen(
                             color = if (isDark) SuccessMintBright else SuccessMint,
                             fontWeight = FontWeight.Medium
                         )
+                    } else if (familySyncCode.isBlank()) {
+                        Spacer(Modifier.height(6.dp))
+                        Text(
+                            text = "⚠️ Код не задан. Укажите уникальный код для включения синхронизации.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = if (isDark) PendingAmberBright else PendingAmber,
+                            fontWeight = FontWeight.Medium
+                        )
                     } else {
                         Spacer(Modifier.height(4.dp))
                         Text(
-                            text = "Один и тот же код должен быть указан на обоих устройствах.",
+                            text = "Этот же индивидуальный код должен быть указан на обоих устройствах.",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.secondary
                         )

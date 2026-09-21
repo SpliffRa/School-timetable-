@@ -28,13 +28,13 @@ object CloudSync {
     }
 
     /**
-     * Преобразует введённый пользователем код семьи (любой текст или цифры)
+     * Преобразует введённый пользователем индивидуальный код семьи (любой текст или цифры)
      * в безопасный ASCII-идентификатор для URL хранилища.
-     * Например: "Алиса 2026" -> "alisa-2026", "1234" -> "family-1234".
+     * Например: "Семья 2026" -> "semya-2026", "1234" -> "family-1234".
      */
     fun normalizeSyncCode(code: String): String {
         val trimmed = code.trim().lowercase()
-        if (trimmed.isBlank()) return "alisa-2026"
+        if (trimmed.isBlank()) return ""
 
         val transliterated = transliterate(trimmed)
         val safe = transliterated.replace(Regex("[^a-z0-9_-]"), "-")
@@ -55,8 +55,12 @@ object CloudSync {
      */
     suspend fun uploadSchedule(syncCode: String, schedule: Schedule): Result<Boolean> =
         withContext(Dispatchers.IO) {
+            val normalized = normalizeSyncCode(syncCode)
+            if (normalized.isBlank()) {
+                return@withContext Result.failure(IllegalArgumentException("Индивидуальный код семьи не задан"))
+            }
             try {
-                val namespace = "sch-" + normalizeSyncCode(syncCode)
+                val namespace = "sch-$normalized"
                 val url = "$CLOUD_BASE_URL/$namespace/schedule"
                 val scheduleJson = json.encodeToString(schedule)
 
@@ -85,8 +89,12 @@ object CloudSync {
      */
     suspend fun fetchSchedule(syncCode: String): Result<Schedule?> =
         withContext(Dispatchers.IO) {
+            val normalized = normalizeSyncCode(syncCode)
+            if (normalized.isBlank()) {
+                return@withContext Result.failure(IllegalArgumentException("Индивидуальный код семьи не задан"))
+            }
             try {
-                val namespace = "sch-" + normalizeSyncCode(syncCode)
+                val namespace = "sch-$normalized"
                 val url = "$CLOUD_BASE_URL/$namespace/schedule"
 
                 val response = httpClient.get(url)

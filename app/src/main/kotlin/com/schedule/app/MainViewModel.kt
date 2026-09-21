@@ -290,9 +290,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * Временный «режим папы» для текущей сессии.
-     * false = режим планшета Алисы,
-     * true  = режим папы (разблокирован паролем).
+     * Временный «режим родителя» для текущей сессии.
+     * false = режим ребёнка,
+     * true  = режим родителя (разблокирован паролем).
      */
     private val _isAdminMode = MutableStateFlow(false)
     val isAdminMode: StateFlow<Boolean> = _isAdminMode.asStateFlow()
@@ -301,7 +301,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private var manualSyncJob: Job? = null
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Управление ролями («Телефон папы» и «Планшет Алисы»)
+    // Управление ролями («Телефон родителя» и «Планшет ребёнка»)
     // ─────────────────────────────────────────────────────────────────────────
 
     /**
@@ -470,7 +470,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val empty = createDefaultSchedule()
                 saveScheduleAsServer(empty)
             } else {
-                // Планшет Алисы без кэша — показываем пустое расписание со всеми 7 днями
+                // Устройство ребёнка без кэша — показываем пустое расписание со всеми 7 днями
                 val empty = createDefaultSchedule()
                 _uiState.value = UiState.Success(
                     schedule = empty,
@@ -482,7 +482,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             // Запускаем синхронизацию
             startSyncService()
 
-            // Если это планшет Алисы, сразу же тихо проверяем облако
+            // Если это устройство ребёнка, сразу же тихо проверяем облако
             if (role == "CLIENT") {
                 checkCloudUpdateSilently()
             }
@@ -544,6 +544,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             _syncState.value = SyncState.SYNCING
             _syncError.value = null
             val syncCode = dataStore.syncCodeFlow.first()
+
+            if (syncCode.isBlank()) {
+                _syncState.value = SyncState.ERROR
+                _syncError.value = "Укажите индивидуальный код семьи в Настройках"
+                _syncStatus.value = "⚠️ Задайте код семьи в Настройках"
+                delay(3_000)
+                _syncState.value = SyncState.IDLE
+                _syncError.value = null
+                return@launch
+            }
 
             if (_deviceRole.value == "SERVER") {
                 _syncStatus.value = "Отправка в облако..."
@@ -646,12 +656,13 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     /**
      * Тихо проверяет наличие обновлений в облаке:
-     * Для CLIENT — проверяет облако, скачивает новую версию, если папа обновил расписание.
+     * Для CLIENT — проверяет облако, скачивает новую версию, если родитель обновил расписание.
      * Для SERVER — проверяет актуальность версии в облаке и отправляет расписание при необходимости.
      */
     suspend fun checkSyncUpdateSilently() {
         val role = _deviceRole.value
         val syncCode = dataStore.syncCodeFlow.first()
+        if (syncCode.isBlank()) return
         if (role == "CLIENT") {
             try {
                 val result = CloudSync.fetchSchedule(syncCode)
@@ -813,12 +824,16 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             Log.e("MainViewModel", "Failed to update server schedule: ${e.message}", e)
         }
 
-        // 2. Отправить в защищённое облако (работает даже когда телефон папы выключен!)
+        // 2. Отправить в защищённое облако
         viewModelScope.launch {
             val syncCode = dataStore.syncCodeFlow.first()
-            val cloudRes = CloudSync.uploadSchedule(syncCode, schedule)
-            if (cloudRes.isSuccess) {
-                _syncStatus.value = "Сохранено и отправлено в облако ✓"
+            if (syncCode.isNotBlank()) {
+                val cloudRes = CloudSync.uploadSchedule(syncCode, schedule)
+                if (cloudRes.isSuccess) {
+                    _syncStatus.value = "Сохранено и отправлено в облако ✓"
+                } else {
+                    _syncStatus.value = "Сохранено локально ✓"
+                }
             } else {
                 _syncStatus.value = "Сохранено локально ✓"
             }

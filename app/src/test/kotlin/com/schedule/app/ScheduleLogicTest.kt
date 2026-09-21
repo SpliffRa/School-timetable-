@@ -163,14 +163,28 @@ class ScheduleLogicTest {
 
     @Test
     fun `test CloudSync normalizeSyncCode with Russian letters and spaces`() {
-        val code1 = com.schedule.app.data.network.CloudSync.normalizeSyncCode("Алиса 2026")
-        assertEquals("alisa-2026", code1)
+        val code1 = com.schedule.app.data.network.CloudSync.normalizeSyncCode("Семья 2026")
+        assertEquals("semya-2026", code1)
 
         val code2 = com.schedule.app.data.network.CloudSync.normalizeSyncCode("Школа №15")
         assertEquals("shkola-15", code2)
 
         val code3 = com.schedule.app.data.network.CloudSync.normalizeSyncCode("  ")
-        assertEquals("alisa-2026", code3)
+        assertEquals("", code3)
+    }
+
+    @Test
+    fun `test CloudSync rejects blank sync code`() = kotlinx.coroutines.runBlocking {
+        val testSchedule = Schedule(
+            updated = "2026-09-18 15:00",
+            version = System.currentTimeMillis(),
+            days = emptyList()
+        )
+        val uploadResult = com.schedule.app.data.network.CloudSync.uploadSchedule("   ", testSchedule)
+        assertTrue("Upload with blank syncCode must fail", uploadResult.isFailure)
+
+        val fetchResult = com.schedule.app.data.network.CloudSync.fetchSchedule("")
+        assertTrue("Fetch with blank syncCode must fail", fetchResult.isFailure)
     }
 
     @Test
