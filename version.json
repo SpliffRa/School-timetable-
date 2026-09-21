@@ -1,8 +1,8 @@
 {
-  "versionCode": 32,
-  "versionName": "3.0",
-  "downloadUrl": "https://github.com/SpliffRa/School-timetable-/releases/download/v3.0/SchoolSchedule-v3.0.apk",
-  "releaseNotes": "Обновление 3.0: переход на индивидуальный код семьи для облачной синхронизации, удаление общих кодов по умолчанию, повышение безопасности и приватности.",
+  "versionCode": 33,
+  "versionName": "3.1",
+  "downloadUrl": "https://github.com/SpliffRa/School-timetable-/releases/download/v3.1/SchoolSchedule-v3.1.apk",
+  "releaseNotes": "Обновление 3.1: индивидуальный ключ семьи с нулевой вероятностью коллизий, сквозное шифрование E2EE (AES-256-GCM), передача и сканирование по QR-коду.",
   "releaseDate": "2026-09-21",
   "forceUpdate": false
 }
