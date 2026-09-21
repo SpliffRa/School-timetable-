@@ -247,14 +247,15 @@ fun SettingsScreen(
         )
     }
 
-    // Диалог подтверждения генерации нового ключа
+    // Диалог подтверждения сброса ключа
     if (showResetKeyConfirmDialog) {
         AlertDialog(
             onDismissRequest = { showResetKeyConfirmDialog = false },
-            title = { Text("Сгенерировать новый ключ семьи?") },
+            icon = { Icon(Icons.Filled.Refresh, contentDescription = null, tint = MaterialTheme.colorScheme.primary) },
+            title = { Text("Создать новый код семьи?") },
             text = {
                 Text(
-                    "Будет создан новый уникальный ключ сквозного шифрования. После этого потребуется обновить ключ на планшете ребёнка (через QR-код или буфер обмена), чтобы устройства продолжили синхронизироваться."
+                    "После создания нового кода потребуется заново подключить второе устройство (показать ему новый QR-код)."
                 )
             },
             confirmButton = {
@@ -398,13 +399,13 @@ fun SettingsScreen(
                         Spacer(Modifier.width(12.dp))
                         Column {
                             Text(
-                                text = "Индивидуальный ключ семьи",
+                                text = "Код семьи",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = "Сквозное шифрование (E2EE) и изоляция данных",
+                                text = "Для связи расписания между устройствами",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.secondary
                             )
@@ -413,7 +414,7 @@ fun SettingsScreen(
 
                     Spacer(Modifier.height(12.dp))
 
-                    // Информационный баннер безопасности E2EE
+                    // Простая и понятная подсказка для пользователя
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
@@ -422,17 +423,17 @@ fun SettingsScreen(
                     ) {
                         Row(
                             modifier = Modifier.padding(12.dp),
-                            verticalAlignment = Alignment.Top
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
                                 Icons.Filled.Lock,
                                 contentDescription = null,
                                 tint = if (isDark) AccentDark else Accent,
-                                modifier = Modifier.size(20.dp)
+                                modifier = Modifier.size(18.dp)
                             )
                             Spacer(Modifier.width(10.dp))
                             Text(
-                                text = "Расписание шифруется прямо на телефоне (AES-256-GCM). Прочитать его можно только с вашим индивидуальным ключом. Пересечение с расписаниями других семей исключено.",
+                                text = "Нужен для синхронизации расписания на ваших устройствах. Данные надёжно защищены и доступны только вашей семье.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
@@ -463,7 +464,7 @@ fun SettingsScreen(
                             ) {
                                 Icon(Icons.Filled.Key, contentDescription = null, modifier = Modifier.size(18.dp))
                                 Spacer(Modifier.width(8.dp))
-                                Text("Сгенерировать безопасный ключ семьи", fontWeight = FontWeight.SemiBold)
+                                Text("Создать код семьи", fontWeight = FontWeight.SemiBold)
                             }
 
                             OutlinedButton(
@@ -473,11 +474,11 @@ fun SettingsScreen(
                             ) {
                                 Icon(Icons.Filled.QrCodeScanner, contentDescription = null, modifier = Modifier.size(18.dp))
                                 Spacer(Modifier.width(8.dp))
-                                Text("Подключить устройство ребёнка по QR / коду")
+                                Text("Подключить по QR-коду")
                             }
 
                             Text(
-                                text = "⚠️ Ключ не задан. Нажмите «Сгенерировать» на устройстве родителя или «Подключить» на планшете ребёнка.",
+                                text = "⚠️ Код не задан. Создайте его на телефоне или отсканируйте со второго устройства.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = if (isDark) PendingAmberBright else PendingAmber,
                                 fontWeight = FontWeight.Medium
@@ -505,7 +506,7 @@ fun SettingsScreen(
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         Text(
-                                            text = "Ваш ключ семьи:",
+                                            text = "Ваш код семьи:",
                                             style = MaterialTheme.typography.labelMedium,
                                             color = MaterialTheme.colorScheme.secondary
                                         )
@@ -518,7 +519,7 @@ fun SettingsScreen(
                                             )
                                             Spacer(Modifier.width(4.dp))
                                             Text(
-                                                text = "E2EE активно",
+                                                text = "Защищено",
                                                 style = MaterialTheme.typography.labelSmall,
                                                 color = if (isDark) SuccessMintBright else SuccessMint,
                                                 fontWeight = FontWeight.Bold
@@ -529,9 +530,9 @@ fun SettingsScreen(
                                     Text(
                                         text = CryptoUtils.formatFamilyKey(familySyncCode),
                                         style = MaterialTheme.typography.titleMedium.copy(
-                                            fontFamily = FontFamily.Monospace,
-                                            fontWeight = FontWeight.Bold,
-                                            letterSpacing = 1.2.sp
+                                             fontFamily = FontFamily.Monospace,
+                                             fontWeight = FontWeight.Bold,
+                                             letterSpacing = 1.2.sp
                                         ),
                                         color = if (isDark) AccentDark else Accent
                                     )
@@ -561,7 +562,7 @@ fun SettingsScreen(
                                         val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                                         val clip = ClipData.newPlainText("Family Key", familySyncCode)
                                         clipboard.setPrimaryClip(clip)
-                                        Toast.makeText(context, "Ключ скопирован в буфер", Toast.LENGTH_SHORT).show()
+                                        Toast.makeText(context, "Код скопирован", Toast.LENGTH_SHORT).show()
                                     },
                                     modifier = Modifier.weight(1f),
                                     shape = RoundedCornerShape(12.dp)
@@ -575,10 +576,10 @@ fun SettingsScreen(
                                             type = "text/plain"
                                             putExtra(
                                                 Intent.EXTRA_TEXT,
-                                                "Индивидуальный ключ семьи для расписания:\n$familySyncCode\n\nВведите его в Настройках приложения Расписание для связи устройств."
+                                                "Код для подключения расписания:\n$familySyncCode\n\nВведите его в Настройках приложения для связи устройств."
                                             )
                                         }
-                                        context.startActivity(Intent.createChooser(shareIntent, "Поделиться ключом семьи"))
+                                        context.startActivity(Intent.createChooser(shareIntent, "Поделиться кодом семьи"))
                                     },
                                     modifier = Modifier.weight(1f),
                                     shape = RoundedCornerShape(12.dp)
@@ -596,13 +597,13 @@ fun SettingsScreen(
                                 TextButton(onClick = { showScanDialog = true }) {
                                     Icon(Icons.Filled.QrCodeScanner, contentDescription = null, modifier = Modifier.size(16.dp))
                                     Spacer(Modifier.width(4.dp))
-                                    Text("Сменить или ввести вручную", style = MaterialTheme.typography.bodySmall)
+                                    Text("Ввести другой код", style = MaterialTheme.typography.bodySmall)
                                 }
 
                                 TextButton(onClick = { showResetKeyConfirmDialog = true }) {
                                     Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
                                     Spacer(Modifier.width(4.dp))
-                                    Text("Новый ключ", style = MaterialTheme.typography.bodySmall)
+                                    Text("Сменить код", style = MaterialTheme.typography.bodySmall)
                                 }
                             }
                         }

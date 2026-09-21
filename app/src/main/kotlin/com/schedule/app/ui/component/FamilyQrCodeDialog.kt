@@ -101,7 +101,7 @@ fun FamilyQrCodeDialog(
                         )
                         Spacer(Modifier.width(10.dp))
                         Text(
-                            text = "Ключ семьи",
+                            text = "Код семьи",
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold
                         )
@@ -118,7 +118,7 @@ fun FamilyQrCodeDialog(
                 Spacer(Modifier.height(12.dp))
 
                 Text(
-                    text = "Отсканируйте этот QR-код на устройстве ребёнка для мгновенной связки и защиты расписания.",
+                    text = "Отсканируйте этот QR-код на втором устройстве для связи расписания.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     textAlign = TextAlign.Center
@@ -188,7 +188,7 @@ fun FamilyQrCodeDialog(
                             val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
                             val clip = ClipData.newPlainText("Family Key", familyKey)
                             clipboard.setPrimaryClip(clip)
-                            Toast.makeText(context, "Ключ скопирован в буфер", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Код скопирован", Toast.LENGTH_SHORT).show()
                         },
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(12.dp)
@@ -208,10 +208,10 @@ fun FamilyQrCodeDialog(
                                 type = "text/plain"
                                 putExtra(
                                     Intent.EXTRA_TEXT,
-                                    "Индивидуальный ключ семьи для расписания:\n$familyKey\n\nВведите его в Настройках приложения Расписание для связи устройств."
+                                    "Код для подключения расписания:\n$familyKey\n\nВведите его в Настройках приложения для связи устройств."
                                 )
                             }
-                            context.startActivity(Intent.createChooser(shareIntent, "Поделиться ключом семьи"))
+                            context.startActivity(Intent.createChooser(shareIntent, "Поделиться кодом семьи"))
                         },
                         modifier = Modifier.weight(1f),
                         shape = RoundedCornerShape(12.dp),

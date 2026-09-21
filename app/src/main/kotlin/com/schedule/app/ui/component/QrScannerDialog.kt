@@ -123,7 +123,7 @@ fun QrScannerDialog(
                         )
                         Spacer(Modifier.width(10.dp))
                         Text(
-                            text = "Подключение семьи",
+                            text = "Подключение устройства",
                             style = MaterialTheme.typography.titleLarge,
                             fontWeight = FontWeight.Bold
                         )
@@ -140,7 +140,7 @@ fun QrScannerDialog(
                 Spacer(Modifier.height(8.dp))
 
                 Text(
-                    text = "Используйте QR-код или скопированный ключ с устройства родителя для подключения.",
+                    text = "Отсканируйте QR-код со второго устройства или вставьте скопированный код.",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
@@ -160,9 +160,9 @@ fun QrScannerDialog(
                                 val text = clip.getItemAt(0).text?.toString().orEmpty().trim()
                                 if (CryptoUtils.isValidFamilyKey(text)) {
                                     inputKey = text
-                                    Toast.makeText(context, "Ключ вставлен из буфера", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "Код вставлен из буфера", Toast.LENGTH_SHORT).show()
                                 } else {
-                                    Toast.makeText(context, "В буфере нет подходящего ключа", Toast.LENGTH_SHORT).show()
+                                    Toast.makeText(context, "В буфере нет кода семьи", Toast.LENGTH_SHORT).show()
                                 }
                             } else {
                                 Toast.makeText(context, "Буфер обмена пуст", Toast.LENGTH_SHORT).show()
@@ -201,7 +201,7 @@ fun QrScannerDialog(
                 OutlinedTextField(
                     value = inputKey,
                     onValueChange = { inputKey = it.uppercase() },
-                    label = { Text("Ключ семьи") },
+                    label = { Text("Код семьи") },
                     placeholder = { Text("SCH-XXXX-XXXX-XXXX-XXXX") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
@@ -210,7 +210,7 @@ fun QrScannerDialog(
                         if (isValid) {
                             Icon(
                                 imageVector = Icons.Filled.Check,
-                                contentDescription = "Корректный ключ",
+                                contentDescription = "Корректный код",
                                 tint = Color(0xFF4CAF50)
                             )
                         }
@@ -220,7 +220,7 @@ fun QrScannerDialog(
                 if (isValid) {
                     Spacer(Modifier.height(8.dp))
                     Text(
-                        text = "Форматированный вид: ${CryptoUtils.formatFamilyKey(inputKey)}",
+                        text = "Код: ${CryptoUtils.formatFamilyKey(inputKey)}",
                         style = MaterialTheme.typography.bodySmall.copy(
                             fontFamily = FontFamily.Monospace
                         ),
@@ -237,10 +237,12 @@ fun QrScannerDialog(
                             onKeySelected(CryptoUtils.formatFamilyKey(inputKey))
                             onDismiss()
                         } else {
-                            Toast.makeText(context, "Введите корректный ключ семьи", Toast.LENGTH_SHORT).show()
+                            Toast.makeText(context, "Неверный формат кода семьи", Toast.LENGTH_SHORT).show()
                         }
                     },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(50.dp),
                     shape = RoundedCornerShape(12.dp),
                     enabled = isValid,
                     colors = ButtonDefaults.buttonColors(
