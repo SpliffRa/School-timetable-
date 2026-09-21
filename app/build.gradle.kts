@@ -54,6 +54,13 @@ android {
     testOptions {
         unitTests.isReturnDefaultValues = true
     }
+
+    applicationVariants.all {
+        outputs.all {
+            (this as? com.android.build.gradle.internal.api.BaseVariantOutputImpl)?.outputFileName =
+                "SchoolSchedule-v${versionName}.apk"
+        }
+    }
 }
 
 dependencies {

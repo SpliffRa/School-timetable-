@@ -11,7 +11,7 @@
 
 ## 📱 Актуальная версия: **v2.9**
 
-👉 **[Скачать актуальный APK (v2.9)](https://github.com/SpliffRa/School-timetable-/releases/latest/download/app-debug.apk)**
+👉 **[Скачать актуальный APK (SchoolSchedule-v2.9.apk)](https://github.com/SpliffRa/School-timetable-/releases/download/v2.9/SchoolSchedule-v2.9.apk)**
 
 ---
 
