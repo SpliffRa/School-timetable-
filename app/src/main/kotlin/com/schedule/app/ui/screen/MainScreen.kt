@@ -84,7 +84,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.schedule.app.MainViewModel
-import com.schedule.app.SyncState
 import com.schedule.app.UiState
 import com.schedule.app.data.model.Lesson
 import com.schedule.app.data.model.Schedule
@@ -145,8 +144,6 @@ fun MainScreen(
 ) {
     val uiState     by viewModel.uiState.collectAsStateWithLifecycle()
     val deviceRole  by viewModel.deviceRole.collectAsStateWithLifecycle()
-    val syncStatus  by viewModel.syncStatus.collectAsStateWithLifecycle()
-    val syncState   by viewModel.syncState.collectAsStateWithLifecycle()
     val syncError   by viewModel.syncError.collectAsStateWithLifecycle()
     val isAdminMode by viewModel.isAdminMode.collectAsStateWithLifecycle()
     val fontScale   by viewModel.fontScaleFlow().collectAsStateWithLifecycle(initialValue = 1.0f)
@@ -242,16 +239,6 @@ fun MainScreen(
                         )
                     },
                     actions = {
-                        // Облачная синхронизация
-                        CloudSyncPill(
-                            syncState = syncState,
-                            syncStatus = syncStatus,
-                            hasError = syncError != null,
-                            onSyncClick = { viewModel.manualSync() }
-                        )
-
-                        Spacer(Modifier.width(8.dp))
-
                         // Быстрая кнопка размера текста «Аа»
                         Surface(
                             modifier = Modifier
@@ -728,113 +715,6 @@ fun AppleSegmentedControl(
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Капсула статуса синхронизации
-// ─────────────────────────────────────────────────────────────────────────────
-
-@Composable
-private fun CloudSyncPill(
-    syncState: SyncState,
-    syncStatus: String,
-    hasError: Boolean,
-    onSyncClick: () -> Unit
-) {
-    val haptic = LocalHapticFeedback.current
-    val isDark = LocalIsDarkTheme.current
-
-    val containerColor = when {
-        hasError -> MaterialTheme.colorScheme.error.copy(alpha = 0.18f)
-        syncState == SyncState.SYNCING -> (if (isDark) AccentDark else Accent).copy(alpha = 0.20f)
-        syncState == SyncState.SUCCESS -> (if (isDark) SuccessMintDarkBg else SuccessMintLight)
-        else -> if (isDark) Color(0xFF242834) else Color(0xFFECEFF5)
-    }
-
-    val contentColor = when {
-        hasError -> MaterialTheme.colorScheme.error
-        syncState == SyncState.SYNCING -> if (isDark) AccentDark else Accent
-        syncState == SyncState.SUCCESS -> if (isDark) SuccessMintBright else SuccessMint
-        else -> MaterialTheme.colorScheme.secondary
-    }
-
-    Surface(
-        modifier = Modifier
-            .clip(RoundedCornerShape(12.dp))
-            .clickable {
-                haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                onSyncClick()
-            },
-        shape = RoundedCornerShape(12.dp),
-        color = containerColor,
-        border = BorderStroke(1.dp, if (isDark) Color(0xFF333A4A) else Color(0xFFE0E5EE))
-    ) {
-        Row(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            when (syncState) {
-                SyncState.SYNCING -> {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(13.dp),
-                        strokeWidth = 2.dp,
-                        color = contentColor
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        "Обновление…",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = contentColor,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-                SyncState.ERROR -> {
-                    Icon(
-                        Icons.Filled.Warning,
-                        contentDescription = null,
-                        tint = contentColor,
-                        modifier = Modifier.size(14.dp)
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        "Ошибка",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = contentColor,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-                SyncState.SUCCESS -> {
-                    Box(
-                        Modifier
-                            .size(8.dp)
-                            .clip(CircleShape)
-                            .background(contentColor)
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        "Актуально ☁️",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = contentColor,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-                SyncState.IDLE -> {
-                    Icon(
-                        Icons.Filled.Refresh,
-                        contentDescription = null,
-                        tint = contentColor,
-                        modifier = Modifier.size(14.dp)
-                    )
-                    Spacer(Modifier.width(6.dp))
-                    Text(
-                        "Облако",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = contentColor,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-        }
-    }
-}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Заголовок дня
