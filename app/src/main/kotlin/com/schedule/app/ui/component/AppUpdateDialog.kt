@@ -32,6 +32,10 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import android.content.Intent
+import android.net.Uri
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.material3.OutlinedButton
 import com.schedule.app.BuildConfig
 import com.schedule.app.UpdateUiState
 import com.schedule.app.data.network.AppUpdateInfo
@@ -52,6 +56,7 @@ fun AppUpdateDialog(
     onDismiss: () -> Unit
 ) {
     val isDark = LocalIsDarkTheme.current
+    val context = LocalContext.current
 
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -238,10 +243,22 @@ fun AppUpdateDialog(
         confirmButton = {
             when (updateState) {
                 is UpdateUiState.UpdateAvailable -> {
-                    Button(onClick = { onDownloadAndInstall(updateState.info) }) {
-                        Icon(Icons.Filled.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(Modifier.width(6.dp))
-                        Text("Скачать и обновить")
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = {
+                            try {
+                                val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse(updateState.info.downloadUrl)).apply {
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                context.startActivity(browserIntent)
+                            } catch (_: Exception) {}
+                        }) {
+                            Text("Браузер")
+                        }
+                        Button(onClick = { onDownloadAndInstall(updateState.info) }) {
+                            Icon(Icons.Filled.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
+                            Spacer(Modifier.width(6.dp))
+                            Text("Обновить")
+                        }
                     }
                 }
                 is UpdateUiState.ReadyToInstall -> {
@@ -257,8 +274,20 @@ fun AppUpdateDialog(
                     }
                 }
                 is UpdateUiState.Error -> {
-                    Button(onClick = onDismiss) {
-                        Text("Понятно")
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = {
+                            try {
+                                val browserIntent = Intent(Intent.ACTION_VIEW, Uri.parse("https://github.com/SpliffRa/School-timetable-/releases/latest")).apply {
+                                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                                }
+                                context.startActivity(browserIntent)
+                            } catch (_: Exception) {}
+                        }) {
+                            Text("В браузере")
+                        }
+                        Button(onClick = onDismiss) {
+                            Text("Понятно")
+                        }
                     }
                 }
                 else -> {}

@@ -33,6 +33,8 @@ private const val PRIMARY_UPDATE_ENDPOINT = "https://raw.githubusercontent.com/$
 // Резервный CDN jsDelivr (Cloudflare, обходит ограничения провайдеров и кэши)
 private const val JSDELIVR_UPDATE_ENDPOINT = "https://cdn.jsdelivr.net/gh/$GITHUB_OWNER/$GITHUB_REPO@main/version.json"
 private const val FALLBACK_MASTER_ENDPOINT = "https://raw.githubusercontent.com/$GITHUB_OWNER/$GITHUB_REPO/master/version.json"
+// Дополнительное независимое резервное облако (для обхода блокировок raw.githubusercontent.com)
+private const val LEGACY_BACKUP_ENDPOINT = "https://mantledb.sh/v2/sch-app-updates/latest"
 
 /**
  * Модель данных обновления приложения, хранящаяся на GitHub.
@@ -68,7 +70,7 @@ object AppUpdateManager {
      * Запрашивает текст из списка эндпоинтов по очереди.
      */
     private suspend fun fetchRemoteJsonText(): String? {
-        val endpoints = listOf(PRIMARY_UPDATE_ENDPOINT, JSDELIVR_UPDATE_ENDPOINT, FALLBACK_MASTER_ENDPOINT)
+        val endpoints = listOf(PRIMARY_UPDATE_ENDPOINT, JSDELIVR_UPDATE_ENDPOINT, FALLBACK_MASTER_ENDPOINT, LEGACY_BACKUP_ENDPOINT)
         val now = System.currentTimeMillis()
         for (endpoint in endpoints) {
             try {
