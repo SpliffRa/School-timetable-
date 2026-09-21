@@ -27,6 +27,21 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.ContentPaste
+import androidx.compose.material.icons.filled.Key
+import androidx.compose.material.icons.filled.QrCode2
+import androidx.compose.material.icons.filled.QrCodeScanner
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Security
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.unit.sp
+import com.schedule.app.data.security.CryptoUtils
+import com.schedule.app.ui.component.FamilyQrCodeDialog
+import com.schedule.app.ui.component.QrScannerDialog
 import androidx.compose.material.icons.filled.BrightnessAuto
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Cloud
@@ -121,6 +136,9 @@ fun SettingsScreen(
     var syncCodeValidationError by remember { mutableStateOf<String?>(null) }
 
     // Диалоги
+    var showQrDialog by remember { mutableStateOf(false) }
+    var showScanDialog by remember { mutableStateOf(false) }
+    var showResetKeyConfirmDialog by remember { mutableStateOf(false) }
     var showThemeDialog by remember { mutableStateOf(false) }
     var showFontSizeDialog by remember { mutableStateOf(false) }
     var showPasswordDialog by remember { mutableStateOf(false) }
@@ -134,6 +152,9 @@ fun SettingsScreen(
     BackHandler {
         when {
             updateState !is UpdateUiState.Idle -> viewModel.dismissUpdateDialog()
+            showQrDialog -> showQrDialog = false
+            showScanDialog -> showScanDialog = false
+            showResetKeyConfirmDialog -> showResetKeyConfirmDialog = false
             showThemeDialog -> showThemeDialog = false
             showFontSizeDialog -> showFontSizeDialog = false
             showChangePinDialog -> showChangePinDialog = false
@@ -201,6 +222,60 @@ fun SettingsScreen(
                 showThemeDialog = false
             },
             onDismiss = { showThemeDialog = false }
+        )
+    }
+
+    // Диалог показа QR-кода семьи
+    if (showQrDialog && familySyncCode.isNotBlank()) {
+        FamilyQrCodeDialog(
+            familyKey = familySyncCode,
+            onDismiss = { showQrDialog = false }
+        )
+    }
+
+    // Диалог подключения/сканирования QR-кода
+    if (showScanDialog) {
+        QrScannerDialog(
+            currentKey = familySyncCode,
+            onKeySelected = { newKey ->
+                familySyncCode = newKey
+                viewModel.saveSyncCode(newKey)
+                syncCodeSavedSuccess = true
+                showScanDialog = false
+            },
+            onDismiss = { showScanDialog = false }
+        )
+    }
+
+    // Диалог подтверждения генерации нового ключа
+    if (showResetKeyConfirmDialog) {
+        AlertDialog(
+            onDismissRequest = { showResetKeyConfirmDialog = false },
+            title = { Text("Сгенерировать новый ключ семьи?") },
+            text = {
+                Text(
+                    "Будет создан новый уникальный ключ сквозного шифрования. После этого потребуется обновить ключ на планшете ребёнка (через QR-код или буфер обмена), чтобы устройства продолжили синхронизироваться."
+                )
+            },
+            confirmButton = {
+                Button(
+                    onClick = {
+                        val newKey = CryptoUtils.generateFamilyKey()
+                        familySyncCode = newKey
+                        viewModel.saveSyncCode(newKey)
+                        syncCodeSavedSuccess = true
+                        showResetKeyConfirmDialog = false
+                        showQrDialog = true
+                    }
+                ) {
+                    Text("Сгенерировать")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showResetKeyConfirmDialog = false }) {
+                    Text("Отмена")
+                }
+            }
         )
     }
 
@@ -294,7 +369,7 @@ fun SettingsScreen(
         ) {
 
             // ═════════════════════════════════════════════════════════════════
-            // 1. СЕКЦИЯ: ОБЛАЧНАЯ СИНХРОНИЗАЦИЯ (ГЛАВНАЯ НАСТРОЙКА)
+            // 1. СЕКЦИЯ: ИНДИВИДУАЛЬНЫЙ КЛЮЧ СЕМЬИ (E2EE ЗАЩИТА)
             // ═════════════════════════════════════════════════════════════════
             Surface(
                 modifier = Modifier.fillMaxWidth(),
@@ -314,7 +389,7 @@ fun SettingsScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             Icon(
-                                Icons.Filled.Cloud,
+                                Icons.Filled.Security,
                                 contentDescription = null,
                                 tint = if (isDark) AccentDark else Accent,
                                 modifier = Modifier.size(22.dp)
@@ -323,13 +398,13 @@ fun SettingsScreen(
                         Spacer(Modifier.width(12.dp))
                         Column {
                             Text(
-                                text = "Индивидуальный код семьи",
+                                text = "Индивидуальный ключ семьи",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                             Text(
-                                text = "Связывает телефон и планшет через облако",
+                                text = "Сквозное шифрование (E2EE) и изоляция данных",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.secondary
                             )
@@ -338,7 +413,7 @@ fun SettingsScreen(
 
                     Spacer(Modifier.height(12.dp))
 
-                    // Блок с обязательным напоминанием об индивидуальности кода
+                    // Информационный баннер безопасности E2EE
                     Surface(
                         modifier = Modifier.fillMaxWidth(),
                         shape = RoundedCornerShape(12.dp),
@@ -357,7 +432,7 @@ fun SettingsScreen(
                             )
                             Spacer(Modifier.width(10.dp))
                             Text(
-                                text = "Код семьи должен быть строго индивидуальным и уникальным (придумайте своё секретное слово или комбинацию). Укажите один и тот же код на телефоне родителя и планшете ребёнка. Это защитит ваше расписание от совпадений с другими семьями.",
+                                text = "Расписание шифруется прямо на телефоне (AES-256-GCM). Прочитать его можно только с вашим индивидуальным ключом. Пересечение с расписаниями других семей исключено.",
                                 style = MaterialTheme.typography.bodySmall,
                                 color = MaterialTheme.colorScheme.onSurface
                             )
@@ -366,76 +441,171 @@ fun SettingsScreen(
 
                     Spacer(Modifier.height(14.dp))
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        OutlinedTextField(
-                            value = familySyncCode,
-                            onValueChange = {
-                                familySyncCode = it
-                                syncCodeSavedSuccess = false
-                                syncCodeValidationError = null
-                            },
-                            label = { Text("Индивидуальный код семьи") },
-                            placeholder = { Text("Придумайте уникальный код") },
-                            singleLine = true,
-                            isError = syncCodeValidationError != null,
-                            modifier = Modifier.weight(1f)
-                        )
-                        Spacer(Modifier.width(8.dp))
-                        Button(
-                            onClick = {
-                                val code = familySyncCode.trim()
-                                if (code.isBlank()) {
-                                    syncCodeValidationError = "Введите индивидуальный код семьи"
-                                    syncCodeSavedSuccess = false
-                                } else {
-                                    syncCodeValidationError = null
-                                    viewModel.saveSyncCode(code)
-                                    syncCodeSavedSuccess = true
-                                }
-                            },
-                            shape = RoundedCornerShape(12.dp),
-                            modifier = Modifier.height(56.dp)
+                    if (familySyncCode.isBlank()) {
+                        // Ключ ещё не задан
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
-                            Icon(Icons.Filled.Check, contentDescription = null, modifier = Modifier.size(18.dp))
-                            Spacer(Modifier.width(4.dp))
-                            Text("ОК")
-                        }
-                    }
+                            Button(
+                                onClick = {
+                                    val newKey = CryptoUtils.generateFamilyKey()
+                                    familySyncCode = newKey
+                                    viewModel.saveSyncCode(newKey)
+                                    syncCodeSavedSuccess = true
+                                    showQrDialog = true
+                                },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp),
+                                colors = ButtonDefaults.buttonColors(
+                                    containerColor = if (isDark) AccentDark else Accent
+                                )
+                            ) {
+                                Icon(Icons.Filled.Key, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("Сгенерировать безопасный ключ семьи", fontWeight = FontWeight.SemiBold)
+                            }
 
-                    if (syncCodeValidationError != null) {
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            text = syncCodeValidationError ?: "",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.error,
-                            fontWeight = FontWeight.Medium
-                        )
-                    } else if (syncCodeSavedSuccess) {
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            text = "Код сохранён ✓ Расписание будет обновляться автоматически.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (isDark) SuccessMintBright else SuccessMint,
-                            fontWeight = FontWeight.Medium
-                        )
-                    } else if (familySyncCode.isBlank()) {
-                        Spacer(Modifier.height(6.dp))
-                        Text(
-                            text = "⚠️ Код не задан. Укажите уникальный код для включения синхронизации.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = if (isDark) PendingAmberBright else PendingAmber,
-                            fontWeight = FontWeight.Medium
-                        )
+                            OutlinedButton(
+                                onClick = { showScanDialog = true },
+                                modifier = Modifier.fillMaxWidth(),
+                                shape = RoundedCornerShape(12.dp)
+                            ) {
+                                Icon(Icons.Filled.QrCodeScanner, contentDescription = null, modifier = Modifier.size(18.dp))
+                                Spacer(Modifier.width(8.dp))
+                                Text("Подключить устройство ребёнка по QR / коду")
+                            }
+
+                            Text(
+                                text = "⚠️ Ключ не задан. Нажмите «Сгенерировать» на устройстве родителя или «Подключить» на планшете ребёнка.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = if (isDark) PendingAmberBright else PendingAmber,
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
                     } else {
-                        Spacer(Modifier.height(4.dp))
-                        Text(
-                            text = "Этот же индивидуальный код должен быть указан на обоих устройствах.",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.secondary
-                        )
+                        // Ключ уже задан
+                        Column(
+                            modifier = Modifier.fillMaxWidth(),
+                            verticalArrangement = Arrangement.spacedBy(10.dp)
+                        ) {
+                            Surface(
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (isDark) Color(0xFF242834) else Color(0xFFF3F5FA),
+                                border = BorderStroke(
+                                    1.dp,
+                                    if (isDark) Color(0xFF333A4A) else Color(0xFFE2E6EF)
+                                ),
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Column(modifier = Modifier.padding(14.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(
+                                            text = "Ваш ключ семьи:",
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.secondary
+                                        )
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            Icon(
+                                                Icons.Filled.Check,
+                                                contentDescription = null,
+                                                tint = if (isDark) SuccessMintBright else SuccessMint,
+                                                modifier = Modifier.size(16.dp)
+                                            )
+                                            Spacer(Modifier.width(4.dp))
+                                            Text(
+                                                text = "E2EE активно",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = if (isDark) SuccessMintBright else SuccessMint,
+                                                fontWeight = FontWeight.Bold
+                                            )
+                                        }
+                                    }
+                                    Spacer(Modifier.height(6.dp))
+                                    Text(
+                                        text = CryptoUtils.formatFamilyKey(familySyncCode),
+                                        style = MaterialTheme.typography.titleMedium.copy(
+                                            fontFamily = FontFamily.Monospace,
+                                            fontWeight = FontWeight.Bold,
+                                            letterSpacing = 1.2.sp
+                                        ),
+                                        color = if (isDark) AccentDark else Accent
+                                    )
+                                }
+                            }
+
+                            // Кнопки действий: Показать QR, Копировать, Поделиться
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                Button(
+                                    onClick = { showQrDialog = true },
+                                    modifier = Modifier.weight(1.2f),
+                                    shape = RoundedCornerShape(12.dp),
+                                    colors = ButtonDefaults.buttonColors(
+                                        containerColor = if (isDark) AccentDark else Accent
+                                    )
+                                ) {
+                                    Icon(Icons.Filled.QrCode2, contentDescription = null, modifier = Modifier.size(18.dp))
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("QR-код", fontWeight = FontWeight.SemiBold)
+                                }
+
+                                OutlinedButton(
+                                    onClick = {
+                                        val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                                        val clip = ClipData.newPlainText("Family Key", familySyncCode)
+                                        clipboard.setPrimaryClip(clip)
+                                        Toast.makeText(context, "Ключ скопирован в буфер", Toast.LENGTH_SHORT).show()
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Icon(Icons.Filled.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
+                                }
+
+                                OutlinedButton(
+                                    onClick = {
+                                        val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                                            type = "text/plain"
+                                            putExtra(
+                                                Intent.EXTRA_TEXT,
+                                                "Индивидуальный ключ семьи для расписания:\n$familySyncCode\n\nВведите его в Настройках приложения Расписание для связи устройств."
+                                            )
+                                        }
+                                        context.startActivity(Intent.createChooser(shareIntent, "Поделиться ключом семьи"))
+                                    },
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(12.dp)
+                                ) {
+                                    Icon(Icons.Filled.Share, contentDescription = null, modifier = Modifier.size(18.dp))
+                                }
+                            }
+
+                            // Нижняя строка: сменить / ввести вручную
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                TextButton(onClick = { showScanDialog = true }) {
+                                    Icon(Icons.Filled.QrCodeScanner, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("Сменить или ввести вручную", style = MaterialTheme.typography.bodySmall)
+                                }
+
+                                TextButton(onClick = { showResetKeyConfirmDialog = true }) {
+                                    Icon(Icons.Filled.Refresh, contentDescription = null, modifier = Modifier.size(16.dp))
+                                    Spacer(Modifier.width(4.dp))
+                                    Text("Новый ключ", style = MaterialTheme.typography.bodySmall)
+                                }
+                            }
+                        }
                     }
                 }
             }

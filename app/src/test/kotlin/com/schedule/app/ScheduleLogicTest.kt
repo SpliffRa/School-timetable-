@@ -8,6 +8,7 @@ import kotlinx.serialization.json.Json
 import io.ktor.client.request.get
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -409,6 +410,68 @@ class ScheduleLogicTest {
         assertEquals(java.time.DayOfWeek.WEDNESDAY, day30.dayOfWeek)
         assertEquals("Среда", weekDays[day30.dayOfWeek.value - 1])
         assertEquals("30 сентября", day30.format(formatter))
+    }
+
+    @Test
+    fun `test CryptoUtils family key generation and formatting`() {
+        val key1 = com.schedule.app.data.security.CryptoUtils.generateFamilyKey()
+        val key2 = com.schedule.app.data.security.CryptoUtils.generateFamilyKey()
+
+        assertTrue("Generated key must start with SCH-", key1.startsWith("SCH-"))
+        assertFalse("Two randomly generated keys must not be equal", key1 == key2)
+        assertTrue("Key must be valid", com.schedule.app.data.security.CryptoUtils.isValidFamilyKey(key1))
+
+        val clean = com.schedule.app.data.security.CryptoUtils.cleanFamilyKey(key1)
+        assertEquals(16, clean.length)
+
+        val formatted = com.schedule.app.data.security.CryptoUtils.formatFamilyKey(clean)
+        assertEquals(key1, formatted)
+    }
+
+    @Test
+    fun `test CryptoUtils AES-256-GCM symmetric encryption and decryption`() {
+        val familyKey = com.schedule.app.data.security.CryptoUtils.generateFamilyKey()
+        val originalPayload = """{"version":1,"days":{"monday":[{"number":1,"name":"Математика"}]}}"""
+
+        val envelope = com.schedule.app.data.security.CryptoUtils.encryptPayload(originalPayload, familyKey)
+        assertNotNull(envelope.iv)
+        assertNotNull(envelope.ciphertext)
+        assertFalse("Ciphertext must not be plaintext", envelope.ciphertext.contains("Математика"))
+
+        val decrypted = com.schedule.app.data.security.CryptoUtils.decryptPayload(envelope, familyKey)
+        assertEquals(originalPayload, decrypted)
+    }
+
+    @Test
+    fun `test CryptoUtils data isolation - wrong key cannot decrypt payload`() {
+        val keyFamilyA = com.schedule.app.data.security.CryptoUtils.generateFamilyKey()
+        val keyFamilyB = com.schedule.app.data.security.CryptoUtils.generateFamilyKey()
+        val secretScheduleA = """{"secret":"Family A confidential school timetable"}"""
+
+        val envelopeA = com.schedule.app.data.security.CryptoUtils.encryptPayload(secretScheduleA, keyFamilyA)
+
+        try {
+            com.schedule.app.data.security.CryptoUtils.decryptPayload(envelopeA, keyFamilyB)
+            org.junit.Assert.fail("Decryption with Family B key must fail and throw InvalidFamilyKeyException")
+        } catch (e: com.schedule.app.data.security.InvalidFamilyKeyException) {
+            // Expected - data isolation verified!
+            assertTrue(e.message?.contains("Не удалось расшифровать") == true)
+        }
+    }
+
+    @Test
+    fun `test CryptoUtils storage namespace derivation isolates families`() {
+        val keyA = "SCH-8F3A-9E2B-C4D1-7A6E"
+        val keyB = "SCH-8F3A-9E2B-C4D1-7A6F" // only 1 char difference
+
+        val nsA1 = com.schedule.app.data.security.CryptoUtils.deriveStorageNamespace(keyA)
+        val nsA2 = com.schedule.app.data.security.CryptoUtils.deriveStorageNamespace("  8f3a9e2bc4d17a6e  ")
+        val nsB = com.schedule.app.data.security.CryptoUtils.deriveStorageNamespace(keyB)
+
+        assertEquals("Same key with different formatting must produce exact same namespace", nsA1, nsA2)
+        assertFalse("Different keys must produce completely different namespaces", nsA1 == nsB)
+        assertTrue("Namespace must start with sch-enc-", nsA1.startsWith("sch-enc-"))
+        assertFalse("Namespace must not contain the raw key", nsA1.contains("8F3A"))
     }
 }
 

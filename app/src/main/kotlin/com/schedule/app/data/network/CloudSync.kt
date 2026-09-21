@@ -2,6 +2,9 @@ package com.schedule.app.data.network
 
 import android.util.Log
 import com.schedule.app.data.model.Schedule
+import com.schedule.app.data.security.CryptoUtils
+import com.schedule.app.data.security.EncryptedScheduleEnvelope
+import com.schedule.app.data.security.InvalidFamilyKeyException
 import io.ktor.client.call.body
 import io.ktor.client.request.get
 import io.ktor.client.request.post
@@ -28,9 +31,8 @@ object CloudSync {
     }
 
     /**
-     * Преобразует введённый пользователем индивидуальный код семьи (любой текст или цифры)
+     * Преобразует введённый пользователем индивидуальный код/ключ семьи
      * в безопасный ASCII-идентификатор для URL хранилища.
-     * Например: "Семья 2026" -> "semya-2026", "1234" -> "family-1234".
      */
     fun normalizeSyncCode(code: String): String {
         val trimmed = code.trim().lowercase()
@@ -44,33 +46,42 @@ object CloudSync {
         return if (safe.length >= 3) {
             safe
         } else {
-            // Если после очистки слишком коротко, добавляем хэш
             "family-" + md5(trimmed).take(8)
         }
     }
 
     /**
-     * Отправляет расписание в защищённое облачное хранилище.
-     * Доступно в любое время с любого устройства с данным кодом синхронизации.
+     * Отправляет зашифрованное расписание в облачное хранилище (E2EE AES-256-GCM).
+     * Облако получает только зашифрованный бинарный шум, прочитать который без ключа невозможно.
      */
     suspend fun uploadSchedule(syncCode: String, schedule: Schedule): Result<Boolean> =
         withContext(Dispatchers.IO) {
-            val normalized = normalizeSyncCode(syncCode)
-            if (normalized.isBlank()) {
-                return@withContext Result.failure(IllegalArgumentException("Индивидуальный код семьи не задан"))
+            val cleanKey = if (CryptoUtils.cleanFamilyKey(syncCode).isNotBlank()) {
+                CryptoUtils.cleanFamilyKey(syncCode)
+            } else {
+                normalizeSyncCode(syncCode)
+            }
+            if (cleanKey.isBlank()) {
+                return@withContext Result.failure(IllegalArgumentException("Индивидуальный ключ семьи не задан"))
             }
             try {
-                val namespace = "sch-$normalized"
+                val namespace = CryptoUtils.deriveStorageNamespace(cleanKey)
                 val url = "$CLOUD_BASE_URL/$namespace/schedule"
+
+                // 1. Сериализуем расписание
                 val scheduleJson = json.encodeToString(schedule)
+
+                // 2. Шифруем алгоритмом AES-256-GCM локальным ключом
+                val envelope = com.schedule.app.data.security.CryptoUtils.encryptPayload(scheduleJson, cleanKey)
+                val envelopeJson = json.encodeToString(envelope)
 
                 val response = httpClient.post(url) {
                     contentType(ContentType.Application.Json)
-                    setBody(scheduleJson)
+                    setBody(envelopeJson)
                 }
 
                 if (response.status.isSuccess()) {
-                    Log.d(TAG, "Uploaded schedule v${schedule.version} to cloud namespace $namespace")
+                    Log.d(TAG, "Uploaded encrypted schedule v${schedule.version} to cloud (E2EE active)")
                     Result.success(true)
                 } else {
                     val body = response.bodyAsText()
@@ -84,17 +95,20 @@ object CloudSync {
         }
 
     /**
-     * Загружает расписание из облака по коду семьи.
-     * Возвращает null, если расписание с таким кодом ещё не загружалось в облако.
+     * Загружает и расшифровывает расписание из облака по ключу семьи.
      */
     suspend fun fetchSchedule(syncCode: String): Result<Schedule?> =
         withContext(Dispatchers.IO) {
-            val normalized = normalizeSyncCode(syncCode)
-            if (normalized.isBlank()) {
-                return@withContext Result.failure(IllegalArgumentException("Индивидуальный код семьи не задан"))
+            val cleanKey = if (CryptoUtils.cleanFamilyKey(syncCode).isNotBlank()) {
+                CryptoUtils.cleanFamilyKey(syncCode)
+            } else {
+                normalizeSyncCode(syncCode)
+            }
+            if (cleanKey.isBlank()) {
+                return@withContext Result.failure(IllegalArgumentException("Индивидуальный ключ семьи не задан"))
             }
             try {
-                val namespace = "sch-$normalized"
+                val namespace = CryptoUtils.deriveStorageNamespace(cleanKey)
                 val url = "$CLOUD_BASE_URL/$namespace/schedule"
 
                 val response = httpClient.get(url)
@@ -106,7 +120,6 @@ object CloudSync {
 
                 if (!response.status.isSuccess()) {
                     val body = response.bodyAsText()
-                    // MantleDB возвращает 400 с ошибкой если путь не найден
                     if (body.contains("Path not found", ignoreCase = true) ||
                         body.contains("not found", ignoreCase = true)) {
                         return@withContext Result.success(null)
@@ -120,8 +133,19 @@ object CloudSync {
                     return@withContext Result.success(null)
                 }
 
-                val schedule = json.decodeFromString<Schedule>(bodyText)
-                Log.d(TAG, "Fetched schedule v${schedule.version} from cloud namespace $namespace")
+                // Пытаемся расшифровать как EncryptedScheduleEnvelope
+                val scheduleJson = try {
+                    val envelope = json.decodeFromString<com.schedule.app.data.security.EncryptedScheduleEnvelope>(bodyText)
+                    com.schedule.app.data.security.CryptoUtils.decryptPayload(envelope, cleanKey)
+                } catch (e: com.schedule.app.data.security.InvalidFamilyKeyException) {
+                    throw e
+                } catch (e: Exception) {
+                    // Если это было старое незашифрованное расписание
+                    bodyText
+                }
+
+                val schedule = json.decodeFromString<Schedule>(scheduleJson)
+                Log.d(TAG, "Fetched and decrypted schedule v${schedule.version} (E2EE verified)")
                 Result.success(schedule)
             } catch (e: Exception) {
                 Log.e(TAG, "Fetch failed: ${e.message}", e)

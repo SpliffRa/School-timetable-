@@ -98,6 +98,9 @@ dependencies {
     // Material Components (для темы в AndroidManifest)
     implementation(libs.material)
 
+    // QR Code Generation & Scanning (ZXing)
+    implementation(libs.zxing.core)
+
     // Unit Testing
     testImplementation("junit:junit:4.13.2")
 }

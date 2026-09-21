@@ -9,6 +9,7 @@ lifecycle = "2.8.6"
 navigation = "2.8.1"
 activity-compose = "1.9.2"
 material = "1.12.0"
+zxing-core = "3.5.3"
 
 [libraries]
 # Compose
@@ -44,6 +45,7 @@ datastore-preferences             = { group = "androidx.datastore",          nam
 
 # Material Components (нужен для темы в Manifest)
 material                          = { group = "com.google.android.material",  name = "material",                        version.ref = "material" }
+zxing-core                        = { group = "com.google.zxing",             name = "core",                            version.ref = "zxing-core" }
 
 [plugins]
 android-application   = { id = "com.android.application",                    version.ref = "agp" }
