@@ -518,11 +518,11 @@ fun MainScreen(
                         selectedDate = selectedDate,
                         expandedLessons = expandedLessons,
                         checkedItems = backpackCheckedItems,
-                        onToggleItem = { dayName, lessonNumber, item ->
-                            viewModel.toggleBackpackItem(dayName, lessonNumber, item)
+                        onToggleItem = { date, lessonNumber, item ->
+                            viewModel.toggleBackpackItem(date, lessonNumber, item)
                         },
-                        onClearDayItems = { dayName ->
-                            viewModel.clearBackpackItemsForDay(dayName)
+                        onClearDayItems = { date ->
+                            viewModel.clearBackpackItemsForDate(date)
                         },
                         onPrev = { navigateTo(tab = 0, date = selectedDate.minusDays(1)) },
                         onNext = { navigateTo(tab = 0, date = selectedDate.plusDays(1)) }
@@ -1144,8 +1144,8 @@ private fun DayView(
     selectedDate: LocalDate,
     expandedLessons: MutableList<Int>,
     checkedItems: Set<String>,
-    onToggleItem: (dayName: String, lessonNumber: Int, item: String) -> Unit,
-    onClearDayItems: (dayName: String) -> Unit,
+    onToggleItem: (date: LocalDate, lessonNumber: Int, item: String) -> Unit,
+    onClearDayItems: (date: LocalDate) -> Unit,
     onPrev: () -> Unit,
     onNext: () -> Unit
 ) {
@@ -1167,7 +1167,7 @@ private fun DayView(
     val lessons = day?.lessons?.sortedBy { it.number } ?: emptyList()
 
     fun itemKey(lessonNumber: Int, item: String): String =
-        "${effectiveDayName.lowercase()}_${lessonNumber}_${item.trim().lowercase()}"
+        "${selectedDate}_${lessonNumber}_${item.trim().lowercase()}"
 
     val allItemsKeys = lessons.flatMap { lesson ->
         lesson.items.map { itemKey(lesson.number, it) }
@@ -1203,7 +1203,7 @@ private fun DayView(
             BackpackSummaryCard(
                 checkedCount = checkedCount,
                 totalCount = totalCount,
-                onClearDay = { onClearDayItems(effectiveDayName) }
+                onClearDay = { onClearDayItems(selectedDate) }
             )
 
             LazyColumn(
@@ -1225,7 +1225,7 @@ private fun DayView(
                         },
                         isItemChecked = { item -> checkedItems.contains(itemKey(lesson.number, item)) },
                         onToggleItem = { item ->
-                            onToggleItem(effectiveDayName, lesson.number, item)
+                            onToggleItem(selectedDate, lesson.number, item)
                         }
                     )
                 }

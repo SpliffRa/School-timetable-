@@ -264,88 +264,93 @@ class ScheduleLogicTest {
     }
 
     @Test
-    fun `test backpack checklist key generation isolates days`() {
-        fun makeKey(dayName: String, lessonNumber: Int, item: String) =
-            "${dayName.trim().lowercase()}_${lessonNumber}_${item.trim().lowercase()}"
+    fun `test backpack checklist key generation isolates calendar dates`() {
+        fun makeKey(date: java.time.LocalDate, lessonNumber: Int, item: String) =
+            "${date}_${lessonNumber}_${item.trim().lowercase()}"
 
-        val mondayKey = makeKey("Понедельник", 1, "Учебник")
-        val tuesdayKey = makeKey("Вторник", 1, "Учебник")
-        val wednesdayKey = makeKey("Среда", 1, "Учебник")
+        val dateThisTuesday = java.time.LocalDate.of(2026, 9, 22)
+        val dateNextTuesday = java.time.LocalDate.of(2026, 9, 29)
+        val dateWednesday = java.time.LocalDate.of(2026, 9, 23)
 
-        assertEquals("понедельник_1_учебник", mondayKey)
-        assertEquals("вторник_1_учебник", tuesdayKey)
-        assertEquals("среда_1_учебник", wednesdayKey)
+        val thisTuesdayKey = makeKey(dateThisTuesday, 1, "Учебник")
+        val nextTuesdayKey = makeKey(dateNextTuesday, 1, "Учебник")
+        val wednesdayKey = makeKey(dateWednesday, 1, "Учебник")
 
-        // Different days must have strictly distinct keys even with identical lesson number and item
-        assertTrue(mondayKey != tuesdayKey)
-        assertTrue(tuesdayKey != wednesdayKey)
-        assertTrue(mondayKey != wednesdayKey)
+        assertEquals("2026-09-22_1_учебник", thisTuesdayKey)
+        assertEquals("2026-09-29_1_учебник", nextTuesdayKey)
+        assertEquals("2026-09-23_1_учебник", wednesdayKey)
+
+        // Tomorrow vs Next week Tuesday must have strictly distinct keys!
+        assertTrue(thisTuesdayKey != nextTuesdayKey)
+        assertTrue(thisTuesdayKey != wednesdayKey)
     }
 
     @Test
-    fun `test backpack checklist state persists across day navigation without cross-day leakage`() {
-        fun makeKey(dayName: String, lessonNumber: Int, item: String) =
-            "${dayName.trim().lowercase()}_${lessonNumber}_${item.trim()}"
+    fun `test marking items for tomorrow does not mark items on next week`() {
+        fun makeKey(date: java.time.LocalDate, lessonNumber: Int, item: String) =
+            "${date}_${lessonNumber}_${item.trim().lowercase()}"
 
         val checkedSet = mutableSetOf<String>()
 
-        fun toggleItem(dayName: String, lessonNumber: Int, item: String) {
-            val key = makeKey(dayName, lessonNumber, item)
+        fun toggleItem(date: java.time.LocalDate, lessonNumber: Int, item: String) {
+            val key = makeKey(date, lessonNumber, item)
             if (checkedSet.contains(key)) checkedSet.remove(key) else checkedSet.add(key)
         }
 
-        fun isChecked(dayName: String, lessonNumber: Int, item: String): Boolean {
-            return checkedSet.contains(makeKey(dayName, lessonNumber, item))
+        fun isChecked(date: java.time.LocalDate, lessonNumber: Int, item: String): Boolean {
+            return checkedSet.contains(makeKey(date, lessonNumber, item))
         }
 
-        // Child marks items on Monday
-        toggleItem("Понедельник", 1, "Учебник")
-        toggleItem("Понедельник", 1, "Тетрадь")
+        val tomorrow = java.time.LocalDate.of(2026, 9, 22) // Tuesday this week
+        val nextWeekTuesday = java.time.LocalDate.of(2026, 9, 29) // Tuesday next week
 
-        // Check Monday
-        assertTrue("Monday Учебник must be checked", isChecked("Понедельник", 1, "Учебник"))
-        assertTrue("Monday Тетрадь must be checked", isChecked("Понедельник", 1, "Тетрадь"))
+        // Child marks items for tomorrow
+        toggleItem(tomorrow, 1, "Учебник")
+        toggleItem(tomorrow, 1, "Тетрадь")
 
-        // Navigate to Tuesday: items on Tuesday must NOT be checked!
-        assertFalse("Tuesday Учебник must NOT be checked", isChecked("Вторник", 1, "Учебник"))
-        assertFalse("Tuesday Тетрадь must NOT be checked", isChecked("Вторник", 1, "Тетрадь"))
+        // Check tomorrow: items are marked!
+        assertTrue("Tomorrow Учебник must be checked", isChecked(tomorrow, 1, "Учебник"))
+        assertTrue("Tomorrow Тетрадь must be checked", isChecked(tomorrow, 1, "Тетрадь"))
 
-        // Child marks an item on Tuesday
-        toggleItem("Вторник", 1, "Пенал")
-        assertTrue("Tuesday Пенал must be checked", isChecked("Вторник", 1, "Пенал"))
+        // Next week Tuesday: items MUST NOT BE CHECKED!
+        assertFalse("Next week Tuesday Учебник must NOT be checked", isChecked(nextWeekTuesday, 1, "Учебник"))
+        assertFalse("Next week Tuesday Тетрадь must NOT be checked", isChecked(nextWeekTuesday, 1, "Тетрадь"))
 
-        // Navigate back to Monday: Monday items MUST STILL BE CHECKED!
-        assertTrue("Monday Учебник must still be checked after returning from Tuesday", isChecked("Понедельник", 1, "Учебник"))
-        assertTrue("Monday Тетрадь must still be checked after returning from Tuesday", isChecked("Понедельник", 1, "Тетрадь"))
-        assertFalse("Monday must not have Tuesday items", isChecked("Понедельник", 1, "Пенал"))
+        // Navigating back to tomorrow preserves marked items
+        assertTrue("Tomorrow Учебник remains checked", isChecked(tomorrow, 1, "Учебник"))
+        assertTrue("Tomorrow Тетрадь remains checked", isChecked(tomorrow, 1, "Тетрадь"))
     }
 
     @Test
-    fun `test backpack checklist clearing for a single day`() {
-        fun makeKey(dayName: String, lessonNumber: Int, item: String) =
-            "${dayName.trim().lowercase()}_${lessonNumber}_${item.trim()}"
+    fun `test backpack checklist clearing for a single date`() {
+        fun makeKey(date: java.time.LocalDate, lessonNumber: Int, item: String) =
+            "${date}_${lessonNumber}_${item.trim().lowercase()}"
+
+        val d1 = java.time.LocalDate.of(2026, 9, 21)
+        val d2 = java.time.LocalDate.of(2026, 9, 22)
+        val d3 = java.time.LocalDate.of(2026, 9, 28)
 
         val checkedSet = mutableSetOf(
-            makeKey("Понедельник", 1, "Учебник"),
-            makeKey("Понедельник", 2, "Краски"),
-            makeKey("Вторник", 1, "Тетрадь"),
-            makeKey("Среда", 1, "Форма")
+            makeKey(d1, 1, "Учебник"),
+            makeKey(d1, 2, "Краски"),
+            makeKey(d2, 1, "Тетрадь"),
+            makeKey(d3, 1, "Форма")
         )
 
-        fun clearDay(dayName: String) {
-            val prefix = "${dayName.trim().lowercase()}_"
+        fun clearDate(date: java.time.LocalDate) {
+            val prefix = "${date}_"
             checkedSet.removeAll { it.startsWith(prefix) }
         }
 
-        clearDay("Понедельник")
+        clearDate(d1)
 
-        // Monday items removed
-        assertFalse(checkedSet.contains(makeKey("Понедельник", 1, "Учебник")))
-        assertFalse(checkedSet.contains(makeKey("Понедельник", 2, "Краски")))
+        // d1 items removed
+        assertFalse(checkedSet.contains(makeKey(d1, 1, "Учебник")))
+        assertFalse(checkedSet.contains(makeKey(d1, 2, "Краски")))
 
-        // Tuesday and Wednesday preserved
-        assertTrue(checkedSet.contains(makeKey("Вторник", 1, "Тетрадь")))
-        assertTrue(checkedSet.contains(makeKey("Среда", 1, "Форма")))
+        // d2 and d3 preserved
+        assertTrue(checkedSet.contains(makeKey(d2, 1, "Тетрадь")))
+        assertTrue(checkedSet.contains(makeKey(d3, 1, "Форма")))
     }
 
     @Test

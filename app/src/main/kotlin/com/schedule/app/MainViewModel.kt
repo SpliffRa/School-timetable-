@@ -8,6 +8,7 @@ import android.content.IntentFilter
 import android.os.Build
 import android.util.Log
 import android.net.Uri
+import java.time.LocalDate
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.schedule.app.data.excel.ScheduleExcelManager
@@ -109,12 +110,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _syncError = MutableStateFlow<String?>(null)
     val syncError: StateFlow<String?> = _syncError.asStateFlow()
 
-    /** Набор ключей собранных вещей в рюкзак (изолированно для каждого дня недели) */
+    /** Набор ключей собранных вещей в рюкзак (уникально для каждой календарной даты YYYY-MM-DD) */
     private val _backpackCheckedItems = MutableStateFlow<Set<String>>(emptySet())
     val backpackCheckedItems: StateFlow<Set<String>> = _backpackCheckedItems.asStateFlow()
 
-    fun toggleBackpackItem(dayName: String, lessonNumber: Int, item: String) {
-        val key = "${dayName.trim().lowercase()}_${lessonNumber}_${item.trim().lowercase()}"
+    fun toggleBackpackItem(date: LocalDate, lessonNumber: Int, item: String) {
+        val key = "${date}_${lessonNumber}_${item.trim().lowercase()}"
         val current = _backpackCheckedItems.value.toMutableSet()
         if (current.contains(key)) {
             current.remove(key)
@@ -128,8 +129,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun clearBackpackItemsForDay(dayName: String) {
-        val prefix = "${dayName.trim().lowercase()}_"
+    fun clearBackpackItemsForDate(date: LocalDate) {
+        val prefix = "${date}_"
         val current = _backpackCheckedItems.value.toMutableSet()
         current.removeAll { it.startsWith(prefix) }
         _backpackCheckedItems.value = current
