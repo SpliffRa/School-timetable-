@@ -5,6 +5,7 @@ import com.schedule.app.data.model.Lesson
 import com.schedule.app.data.model.Schedule
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import io.ktor.client.request.get
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -271,10 +272,28 @@ class ScheduleLogicTest {
         assertEquals("2.5", parsed.versionName)
         assertEquals("https://example.com/app.apk", parsed.downloadUrl)
         assertEquals("Добавлены новые функции", parsed.releaseNotes)
+        assertEquals(false, parsed.forceUpdate)
 
         val currentVersion = 24
         assertTrue("Version 25 must be detected as an update over 24", parsed.versionCode > currentVersion)
         assertFalse("Version 24 must not trigger update", currentVersion > parsed.versionCode)
+    }
+
+    @Test
+    fun `test AppUpdateManager live fetch from GitHub`() = kotlinx.coroutines.runBlocking {
+        val result = com.schedule.app.data.network.AppUpdateManager.fetchLatestRemoteInfo()
+        val info = result.getOrNull()
+        org.junit.Assert.assertNotNull("fetchLatestRemoteInfo should return update info, err=${result.exceptionOrNull()?.message}", info)
+        assertEquals(32, info?.versionCode)
+        assertEquals("3.0", info?.versionName)
+
+        // Test downloading the first chunk from the release URL
+        val client = io.ktor.client.HttpClient(io.ktor.client.engine.okhttp.OkHttp) {
+            followRedirects = true
+        }
+        val response = client.get(info!!.downloadUrl)
+        println("Download response status: ${response.status}")
+        assertTrue("Download from GitHub release must be successful, got ${response.status}", response.status.value in 200..299)
     }
 
     @Test

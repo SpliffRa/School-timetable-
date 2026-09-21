@@ -10,19 +10,14 @@ import io.ktor.client.HttpClient
 import io.ktor.client.engine.okhttp.OkHttp
 import io.ktor.client.plugins.HttpTimeout
 import io.ktor.client.request.get
-import io.ktor.client.request.post
 import io.ktor.client.request.prepareGet
-import io.ktor.client.request.setBody
 import io.ktor.client.statement.bodyAsChannel
 import io.ktor.client.statement.bodyAsText
-import io.ktor.http.ContentType
 import io.ktor.http.HttpStatusCode
-import io.ktor.http.contentType
 import io.ktor.http.isSuccess
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import java.io.File
 import java.io.FileOutputStream
@@ -35,8 +30,9 @@ private const val GITHUB_REPO = "School-timetable-"
 
 // Основной эндпоинт метаданных на GitHub (CDN Fastly, без лимитов скорости и API)
 private const val PRIMARY_UPDATE_ENDPOINT = "https://raw.githubusercontent.com/$GITHUB_OWNER/$GITHUB_REPO/main/version.json"
+// Резервный CDN jsDelivr (Cloudflare, обходит ограничения провайдеров и кэши)
+private const val JSDELIVR_UPDATE_ENDPOINT = "https://cdn.jsdelivr.net/gh/$GITHUB_OWNER/$GITHUB_REPO@main/version.json"
 private const val FALLBACK_MASTER_ENDPOINT = "https://raw.githubusercontent.com/$GITHUB_OWNER/$GITHUB_REPO/master/version.json"
-private const val LEGACY_ENDPOINT = "https://mantledb.sh/v2/sch-app-updates/latest"
 
 /**
  * Модель данных обновления приложения, хранящаяся на GitHub.
@@ -72,7 +68,7 @@ object AppUpdateManager {
      * Запрашивает текст из списка эндпоинтов по очереди.
      */
     private suspend fun fetchRemoteJsonText(): String? {
-        val endpoints = listOf(PRIMARY_UPDATE_ENDPOINT, FALLBACK_MASTER_ENDPOINT, LEGACY_ENDPOINT)
+        val endpoints = listOf(PRIMARY_UPDATE_ENDPOINT, JSDELIVR_UPDATE_ENDPOINT, FALLBACK_MASTER_ENDPOINT)
         for (endpoint in endpoints) {
             try {
                 val response = httpClient.get(endpoint)
@@ -124,28 +120,6 @@ object AppUpdateManager {
                 ?: return@withContext Result.success(null)
             Result.success(json.decodeFromString<AppUpdateInfo>(body))
         } catch (e: Exception) {
-            Result.failure(e)
-        }
-    }
-
-    /**
-     * Публикует информацию о новой версии APK в резервное облако.
-     */
-    suspend fun publishUpdate(info: AppUpdateInfo): Result<Boolean> = withContext(Dispatchers.IO) {
-        try {
-            val payload = json.encodeToString(info)
-            val response = httpClient.post(LEGACY_ENDPOINT) {
-                contentType(ContentType.Application.Json)
-                setBody(payload)
-            }
-            if (response.status.isSuccess()) {
-                Log.d(TAG, "Update published to legacy backup: v${info.versionName} (${info.versionCode})")
-                Result.success(true)
-            } else {
-                Result.failure(Exception("Ошибка публикации: ${response.status.value}"))
-            }
-        } catch (e: Exception) {
-            Log.e(TAG, "Failed to publish update: ${e.message}", e)
             Result.failure(e)
         }
     }
@@ -225,6 +199,21 @@ object AppUpdateManager {
      */
     fun installApk(context: Context, apkFile: File): Result<Unit> {
         return try {
+            // На Android 8.0+ (API 26+) проверяем разрешение на установку неизвестных приложений
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O) {
+                if (!context.packageManager.canRequestPackageInstalls()) {
+                    try {
+                        val settingsIntent = Intent(android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES).apply {
+                            data = android.net.Uri.parse("package:${context.packageName}")
+                            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                        }
+                        context.startActivity(settingsIntent)
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Cannot open unknown sources settings: ${e.message}")
+                    }
+                }
+            }
+
             val authority = "${context.packageName}.fileprovider"
             val apkUri = FileProvider.getUriForFile(context, authority, apkFile)
 

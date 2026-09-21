@@ -277,19 +277,6 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     /**
-     * Публикует новое обновление приложения в облако (для телефона папы / разработчика).
-     */
-    fun publishUpdateToCloud(info: AppUpdateInfo, onDone: (Boolean) -> Unit) {
-        viewModelScope.launch {
-            val res = AppUpdateManager.publishUpdate(info)
-            onDone(res.isSuccess)
-            if (res.isSuccess) {
-                checkForUpdates(isManual = false)
-            }
-        }
-    }
-
-    /**
      * Временный «режим родителя» для текущей сессии.
      * false = режим ребёнка,
      * true  = режим родителя (разблокирован паролем).
