@@ -4,9 +4,15 @@ import android.app.Activity
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -43,8 +49,11 @@ import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.FormatSize
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Sync
+import androidx.compose.material.icons.filled.SyncProblem
 import androidx.compose.material.icons.filled.SystemUpdate
 import androidx.compose.material.icons.filled.Warning
+import com.schedule.app.SyncState
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -145,6 +154,8 @@ fun MainScreen(
     val uiState     by viewModel.uiState.collectAsStateWithLifecycle()
     val deviceRole  by viewModel.deviceRole.collectAsStateWithLifecycle()
     val syncError   by viewModel.syncError.collectAsStateWithLifecycle()
+    val syncState   by viewModel.syncState.collectAsStateWithLifecycle()
+    val syncStatus  by viewModel.syncStatus.collectAsStateWithLifecycle()
     val isAdminMode by viewModel.isAdminMode.collectAsStateWithLifecycle()
     val fontScale   by viewModel.fontScaleFlow().collectAsStateWithLifecycle(initialValue = 1.0f)
     val backpackCheckedItems by viewModel.backpackCheckedItems.collectAsStateWithLifecycle()
@@ -239,6 +250,73 @@ fun MainScreen(
                         )
                     },
                     actions = {
+                        // Кнопка ручной синхронизации
+                        val isSyncing = syncState == SyncState.SYNCING
+                        val spinTransition = rememberInfiniteTransition(label = "syncSpin")
+                        val spinAngle by spinTransition.animateFloat(
+                            initialValue = 0f,
+                            targetValue = 360f,
+                            animationSpec = infiniteRepeatable(
+                                animation = tween(900, easing = LinearEasing),
+                                repeatMode = RepeatMode.Restart
+                            ),
+                            label = "spinAngle"
+                        )
+
+                        Surface(
+                            modifier = Modifier
+                                .size(38.dp)
+                                .clip(CircleShape)
+                                .clickable(enabled = !isSyncing) { viewModel.manualSync() },
+                            shape = CircleShape,
+                            color = when (syncState) {
+                                SyncState.SUCCESS -> if (isDark) SuccessMintBright.copy(alpha = 0.2f) else SuccessMintLight
+                                SyncState.ERROR -> if (isDark) MaterialTheme.colorScheme.error.copy(alpha = 0.2f) else MaterialTheme.colorScheme.error.copy(alpha = 0.1f)
+                                else -> if (isDark) Color(0xFF242834) else Color(0xFFECEFF5)
+                            },
+                            border = BorderStroke(
+                                1.dp,
+                                when (syncState) {
+                                    SyncState.SUCCESS -> if (isDark) SuccessMintBright else SuccessMint
+                                    SyncState.ERROR -> MaterialTheme.colorScheme.error
+                                    else -> if (isDark) Color(0xFF333A4A) else Color(0xFFE0E5EE)
+                                }
+                            )
+                        ) {
+                            Box(contentAlignment = Alignment.Center) {
+                                when (syncState) {
+                                    SyncState.SUCCESS -> {
+                                        Icon(
+                                            imageVector = Icons.Filled.Check,
+                                            contentDescription = "Синхронизировано",
+                                            tint = if (isDark) SuccessMintBright else SuccessMint,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                    SyncState.ERROR -> {
+                                        Icon(
+                                            imageVector = Icons.Filled.SyncProblem,
+                                            contentDescription = "Ошибка синхронизации",
+                                            tint = MaterialTheme.colorScheme.error,
+                                            modifier = Modifier.size(20.dp)
+                                        )
+                                    }
+                                    else -> {
+                                        Icon(
+                                            imageVector = Icons.Filled.Sync,
+                                            contentDescription = "Синхронизировать",
+                                            tint = if (isDark) Color.White else Color(0xFF161922),
+                                            modifier = Modifier
+                                                .size(20.dp)
+                                                .then(if (isSyncing) Modifier.rotate(spinAngle) else Modifier)
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
+                        Spacer(Modifier.width(8.dp))
+
                         // Быстрая кнопка размера текста «Аа»
                         Surface(
                             modifier = Modifier
@@ -405,7 +483,62 @@ fun MainScreen(
                     }
                 }
 
-                // Ошибка синхронизации
+                // Статус синхронизации (в процессе / успех)
+                AnimatedVisibility(visible = syncState == SyncState.SYNCING || syncState == SyncState.SUCCESS) {
+                    val isSuccess = syncState == SyncState.SUCCESS
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 4.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        color = if (isSuccess) {
+                            if (isDark) SuccessMintBright.copy(alpha = 0.15f) else SuccessMintLight
+                        } else {
+                            (if (isDark) AccentDark else Accent).copy(alpha = 0.12f)
+                        },
+                        border = BorderStroke(
+                            1.dp,
+                            if (isSuccess) {
+                                if (isDark) SuccessMintBright.copy(alpha = 0.5f) else SuccessMint.copy(alpha = 0.4f)
+                            } else {
+                                (if (isDark) AccentDark else Accent).copy(alpha = 0.35f)
+                            }
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            if (isSuccess) {
+                                Icon(
+                                    Icons.Filled.Check,
+                                    contentDescription = null,
+                                    tint = if (isDark) SuccessMintBright else SuccessMint,
+                                    modifier = Modifier.size(16.dp)
+                                )
+                            } else {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(16.dp),
+                                    strokeWidth = 2.dp,
+                                    color = if (isDark) AccentDark else Accent
+                                )
+                            }
+                            Spacer(Modifier.width(8.dp))
+                            Text(
+                                text = syncStatus,
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = if (isSuccess) {
+                                    if (isDark) SuccessMintBright else SuccessMint
+                                } else {
+                                    if (isDark) AccentDark else Accent
+                                },
+                                fontWeight = FontWeight.Medium
+                            )
+                        }
+                    }
+                }
+
+                // Ошибка синхронизации с кнопкой повтора
                 AnimatedVisibility(visible = syncError != null) {
                     Surface(
                         modifier = Modifier
@@ -430,8 +563,16 @@ fun MainScreen(
                                 text = syncError ?: "",
                                 style = MaterialTheme.typography.bodyMedium,
                                 color = MaterialTheme.colorScheme.error,
-                                fontWeight = FontWeight.Medium
+                                fontWeight = FontWeight.Medium,
+                                modifier = Modifier.weight(1f)
                             )
+                            Spacer(Modifier.width(6.dp))
+                            TextButton(
+                                onClick = { viewModel.manualSync() },
+                                contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)
+                            ) {
+                                Text("Повторить", style = MaterialTheme.typography.labelSmall)
+                            }
                         }
                     }
                 }
@@ -1067,16 +1208,30 @@ private fun DayView(
         )
 
         if (lessons.isEmpty()) {
+            val isEntireScheduleEmpty = schedule.days.all { it.lessons.isEmpty() }
             Box(Modifier.fillMaxSize(), Alignment.Center) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("📚", fontSize = 48.sp)
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    modifier = Modifier.padding(horizontal = 24.dp)
+                ) {
+                    Text(if (isEntireScheduleEmpty) "🔄" else "📚", fontSize = 48.sp)
                     Spacer(Modifier.height(12.dp))
                     Text(
-                        "Уроков нет — выходной!",
+                        if (isEntireScheduleEmpty) "Расписание пока не загружено" else "Уроков нет — выходной!",
                         style = MaterialTheme.typography.titleLarge,
                         fontWeight = FontWeight.Bold,
-                        color = MaterialTheme.colorScheme.secondary
+                        color = MaterialTheme.colorScheme.secondary,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center
                     )
+                    if (isEntireScheduleEmpty) {
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "Нажмите кнопку синхронизации вверху или подключитесь через Настройки ⚙️ (QR-код)",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                        )
+                    }
                 }
             }
         } else {

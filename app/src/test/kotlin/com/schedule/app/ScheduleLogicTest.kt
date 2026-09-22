@@ -473,5 +473,27 @@ class ScheduleLogicTest {
         assertTrue("Namespace must start with sch-enc-", nsA1.startsWith("sch-enc-"))
         assertFalse("Namespace must not contain the raw key", nsA1.contains("8F3A"))
     }
+
+    @Test
+    fun `test real CloudSync upload and fetch integration`() = kotlinx.coroutines.runBlocking {
+        val testKey = "SCH-TEST-KEY1-2345-6789"
+        val testSchedule = Schedule(
+            updated = "2026-09-22T10:00:00",
+            version = System.currentTimeMillis(),
+            days = listOf(
+                Day("Понедельник", listOf(Lesson(1, "08:30–09:05", "Математика", "", listOf("Учебник", "Циркуль"))))
+            )
+        )
+        val uploadRes = com.schedule.app.data.network.CloudSync.uploadSchedule(testKey, testSchedule)
+        assertTrue("Cloud upload must succeed: ${uploadRes.exceptionOrNull()?.message}", uploadRes.isSuccess)
+
+        val fetchRes = com.schedule.app.data.network.CloudSync.fetchSchedule(testKey)
+        assertTrue("Cloud fetch must succeed: ${fetchRes.exceptionOrNull()?.message}", fetchRes.isSuccess)
+        val fetched = fetchRes.getOrNull()
+        assertNotNull("Fetched schedule must not be null", fetched)
+        assertEquals(testSchedule.version, fetched?.version)
+        assertEquals("Математика", fetched?.days?.first()?.lessons?.first()?.subject)
+        assertEquals(listOf("Учебник", "Циркуль"), fetched?.days?.first()?.lessons?.first()?.items)
+    }
 }
 

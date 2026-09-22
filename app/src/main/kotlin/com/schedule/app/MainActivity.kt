@@ -87,6 +87,7 @@ class MainActivity : ComponentActivity() {
                 val observer = LifecycleEventObserver { _, event ->
                     when (event) {
                         Lifecycle.Event.ON_START -> viewModel.onAppForegrounded()
+                        Lifecycle.Event.ON_RESUME -> viewModel.checkCloudUpdateSilently()
                         Lifecycle.Event.ON_STOP -> viewModel.onAppBackgrounded()
                         else -> Unit
                     }

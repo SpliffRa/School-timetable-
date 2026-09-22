@@ -14,6 +14,10 @@
 -keepclassmembers class com.schedule.app.data.model.** {
     *** Companion;
 }
+-keep,includedescriptorclasses class com.schedule.app.data.security.** { *; }
+-keepclassmembers class com.schedule.app.data.security.** {
+    *** Companion;
+}
 
 # Ktor
 -dontwarn io.ktor.**
@@ -22,3 +26,6 @@
 # OkHttp
 -dontwarn okhttp3.**
 -dontwarn okio.**
+
+# SLF4J (used by Ktor embeddedServer)
+-dontwarn org.slf4j.**

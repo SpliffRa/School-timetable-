@@ -9,9 +9,9 @@
 
 ---
 
-## 📱 Актуальная версия: **v3.4**
+## 📱 Актуальная версия: **v3.5**
 
-👉 **[Скачать актуальный APK (SchoolSchedule-v3.4.apk)](https://github.com/SpliffRa/School-timetable-/releases/download/v3.4/SchoolSchedule-v3.4.apk)**
+👉 **[Скачать актуальный APK (SchoolSchedule-v3.5.apk)](https://github.com/SpliffRa/School-timetable-/releases/download/v3.5/SchoolSchedule-v3.5.apk)**
 
 ---
 

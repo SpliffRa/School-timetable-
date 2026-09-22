@@ -19,12 +19,17 @@ import com.schedule.app.data.network.AppUpdateInfo
 import com.schedule.app.data.network.AppUpdateManager
 import com.schedule.app.data.network.AppUpdateNotificationHelper
 import com.schedule.app.data.network.CloudSync
+import com.schedule.app.data.network.PeerDiscovery
+import com.schedule.app.data.network.SERVER_PORT
 import com.schedule.app.data.network.SyncService
+import com.schedule.app.data.network.fetchSchedule
 import com.schedule.app.data.security.CryptoUtils
 import com.schedule.app.data.store.AppDataStore
+import android.net.wifi.WifiManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -165,7 +170,21 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     fun saveSyncCode(code: String) {
         viewModelScope.launch {
-            dataStore.saveSyncCode(code)
+            val trimmed = code.trim()
+            dataStore.saveSyncCode(trimmed)
+            restartSyncService()
+            if (_deviceRole.value == "SERVER") {
+                val current = (_uiState.value as? UiState.Success)?.schedule
+                if (current != null) {
+                    _syncStatus.value = "Отправка в облако..."
+                    val res = CloudSync.uploadSchedule(trimmed, current)
+                    if (res.isSuccess) {
+                        _syncStatus.value = "Расписание отправлено в облако ✓"
+                    }
+                }
+            } else {
+                checkCloudUpdateSilently()
+            }
         }
     }
 
@@ -341,7 +360,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     viewModelScope.launch {
                         try {
                             val schedule = json.decodeFromString<Schedule>(scheduleJson)
-                            _uiState.value = UiState.Success(schedule = schedule, fromCache = false)
+                            val full = ensureAllDays(schedule)
+                            _uiState.value = UiState.Success(schedule = full, fromCache = false)
                             _syncStatus.value = "Синхронизировано ✓"
                             _syncError.value = null
 
@@ -350,7 +370,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                 manualSyncJob?.cancel()
                                 _syncState.value = SyncState.SUCCESS
                                 launch {
-                                    delay(4_000)
+                                    delay(3_000)
                                     _syncState.value = SyncState.IDLE
                                 }
                             }
@@ -533,6 +553,41 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
      *   Если расписание актуально → мгновенный SUCCESS.
      *   Если облако недоступно → fallback на локальный Wi-Fi.
      */
+    @Suppress("DEPRECATION")
+    private fun getWifiIp(): String? {
+        val ctx = getApplication<Application>()
+        return try {
+            val wm = ctx.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+            val ipInt = wm?.connectionInfo?.ipAddress ?: 0
+            if (ipInt != 0) {
+                String.format(
+                    java.util.Locale.US,
+                    "%d.%d.%d.%d",
+                    ipInt and 0xff,
+                    ipInt shr 8 and 0xff,
+                    ipInt shr 16 and 0xff,
+                    ipInt shr 24 and 0xff
+                )
+            } else {
+                java.net.NetworkInterface.getNetworkInterfaces()?.asSequence()
+                    ?.flatMap { it.inetAddresses.asSequence() }
+                    ?.firstOrNull { !it.isLoopbackAddress && it is java.net.Inet4Address }
+                    ?.hostAddress
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Запускает ручную синхронизацию.
+     *
+     * Для SERVER: отправляет расписание в облако и перезапускает локальный сервер.
+     * Для CLIENT:
+     *   1) Быстрый опрос локальной сети Wi-Fi (HTTP) — находит сервер родителя за секунду.
+     *   2) Если по Wi-Fi не найден — проверяет зашифрованное облако MantleDB.
+     *   3) Применяет обновление, если версия выше ИЛИ содержимое уроков/вещей отличается.
+     */
     fun manualSync() {
         manualSyncJob?.cancel()
         manualSyncJob = viewModelScope.launch {
@@ -558,9 +613,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     if (cloudRes.isSuccess) {
                         _syncState.value = SyncState.SUCCESS
                         _syncStatus.value = "Расписание отправлено в облако ✓"
+                        _syncError.value = null
                     } else {
-                        _syncState.value = SyncState.SUCCESS
-                        _syncStatus.value = "Сервер запущен (локально) ✓"
+                        val errMsg = cloudRes.exceptionOrNull()?.message ?: "Сбой соединения с облаком"
+                        _syncState.value = SyncState.ERROR
+                        _syncError.value = "Ошибка облака: $errMsg"
+                        _syncStatus.value = "⚠️ Сохранено на устройстве (облако недоступно)"
                     }
                 } else {
                     _syncState.value = SyncState.ERROR
@@ -571,15 +629,49 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 _syncState.value = SyncState.IDLE
                 _syncError.value = null
             } else {
-                // Клиент: проверяем облако
+                // Клиент:
+                // 1. Сначала пробуем прямой поиск сервера по Wi-Fi
+                val localIp = getWifiIp()
+                if (!localIp.isNullOrBlank() && localIp != "127.0.0.1") {
+                    _syncStatus.value = "Поиск в сети Wi-Fi..."
+                    withTimeoutOrNull(2500L) {
+                        PeerDiscovery.probeSubnetForServer(localIp) { serverIp ->
+                            launch {
+                                try {
+                                    val schedule = fetchSchedule(serverIp, SERVER_PORT)
+                                    val full = ensureAllDays(schedule)
+                                    val scheduleJson = json.encodeToString(full)
+                                    dataStore.saveCache(scheduleJson)
+                                    dataStore.saveLastKnownVersion(full.version)
+                                    _uiState.value = UiState.Success(schedule = full, fromCache = false)
+                                    _syncState.value = SyncState.SUCCESS
+                                    _syncStatus.value = "Синхронизировано по Wi-Fi ✓"
+                                    _syncError.value = null
+                                } catch (e: Exception) {
+                                    Log.w("MainViewModel", "Local subnet fetch error: ${e.message}")
+                                }
+                            }
+                        }
+                    }
+                    if (_syncState.value == SyncState.SUCCESS) {
+                        delay(3_000)
+                        _syncState.value = SyncState.IDLE
+                        return@launch
+                    }
+                }
+
+                // 2. Проверяем защищённое облако
                 _syncStatus.value = "Проверка в облаке..."
+                var cloudFetchError: String? = null
                 try {
                     val cloudRes = CloudSync.fetchSchedule(syncCode)
                     if (cloudRes.isSuccess) {
                         val remote = cloudRes.getOrNull()
                         val lastVersion = dataStore.lastKnownVersionFlow.first()
+                        val current = (_uiState.value as? UiState.Success)?.schedule
+                        val contentDiffers = current == null || current.days != remote?.days
 
-                        if (remote != null && remote.version > lastVersion) {
+                        if (remote != null && (remote.version > lastVersion || contentDiffers)) {
                             val full = ensureAllDays(remote)
                             val scheduleJson = json.encodeToString(full)
                             dataStore.saveCache(scheduleJson)
@@ -587,30 +679,45 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                             _uiState.value = UiState.Success(schedule = full, fromCache = false)
                             _syncState.value = SyncState.SUCCESS
                             _syncStatus.value = "Расписание обновлено из облака ✓"
-                            delay(4_000)
+                            _syncError.value = null
+                            delay(3_000)
                             _syncState.value = SyncState.IDLE
                             return@launch
                         } else if (remote != null) {
+                            val full = ensureAllDays(remote)
+                            val scheduleJson = json.encodeToString(full)
+                            dataStore.saveCache(scheduleJson)
+                            dataStore.saveLastKnownVersion(full.version)
+                            _uiState.value = UiState.Success(schedule = full, fromCache = false)
                             _syncState.value = SyncState.SUCCESS
                             _syncStatus.value = "Расписание уже актуально ✓"
-                            delay(4_000)
+                            _syncError.value = null
+                            delay(3_000)
                             _syncState.value = SyncState.IDLE
                             return@launch
+                        } else {
+                            cloudFetchError = "В облаке ещё нет расписания для этого кода семьи"
                         }
+                    } else {
+                        cloudFetchError = cloudRes.exceptionOrNull()?.message
                     }
                 } catch (e: Exception) {
+                    cloudFetchError = e.message
                     Log.w("MainViewModel", "Cloud fetch in manualSync failed: ${e.message}")
                 }
 
-                // Fallback: локальный Wi-Fi поиск
-                _syncStatus.value = "Поиск по локальному Wi-Fi..."
+                // 3. Fallback на UDP discovery в фоне
                 restartSyncService()
-                delay(12_000)
 
                 if (_syncState.value == SyncState.SYNCING) {
                     _syncState.value = SyncState.ERROR
-                    _syncError.value = "Сервер не найден — проверь интернет или Wi-Fi"
-                    _syncStatus.value = "❌ Сервер не найден"
+                    val finalMsg = if (cloudFetchError != null) {
+                        "Облако: $cloudFetchError. Сервер по Wi-Fi не ответил."
+                    } else {
+                        "Сервер не найден ни в локальной сети, ни в облаке."
+                    }
+                    _syncError.value = finalMsg
+                    _syncStatus.value = "⚠️ $finalMsg"
                     delay(5_000)
                     _syncState.value = SyncState.IDLE
                     _syncError.value = null
@@ -625,7 +732,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /**
      * Вызывается при переходе приложения на передний план (foreground).
      * Сразу же выполняет первую проверку синхронизации, а затем повторяет её
-     * с интервалом в 1 минуту (60 секунд), пока приложение открыто.
+     * с интервалом в 30 секунд, пока приложение открыто.
      */
     fun onAppForegrounded() {
         periodicSyncJob?.cancel()
@@ -635,7 +742,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             while (isActive) {
                 checkSyncUpdateSilently()
-                delay(60_000L) // 1 минута
+                delay(30_000L)
             }
         }
     }
@@ -651,7 +758,8 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     /**
      * Тихо проверяет наличие обновлений в облаке:
-     * Для CLIENT — проверяет облако, скачивает новую версию, если родитель обновил расписание.
+     * Для CLIENT — проверяет облако, скачивает новую версию, если родитель обновил расписание
+     *              или если состав уроков/вещей отличается.
      * Для SERVER — проверяет актуальность версии в облаке и отправляет расписание при необходимости.
      */
     suspend fun checkSyncUpdateSilently() {
@@ -664,7 +772,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 if (result.isSuccess) {
                     val remote = result.getOrNull() ?: return
                     val lastVersion = dataStore.lastKnownVersionFlow.first()
-                    if (remote.version > lastVersion) {
+                    val current = (_uiState.value as? UiState.Success)?.schedule
+                    val contentDiffers = current == null || current.days != remote.days
+
+                    if (remote.version > lastVersion || contentDiffers) {
                         val full = ensureAllDays(remote)
                         val scheduleJson = json.encodeToString(full)
                         dataStore.saveCache(scheduleJson)
@@ -681,8 +792,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 val current = (_uiState.value as? UiState.Success)?.schedule
                 if (current != null) {
                     val cloudRes = CloudSync.fetchSchedule(syncCode)
-                    val remoteVersion = cloudRes.getOrNull()?.version ?: 0L
-                    if (current.version > remoteVersion) {
+                    val remote = cloudRes.getOrNull()
+                    val remoteVersion = remote?.version ?: 0L
+                    val contentDiffers = remote == null || current.days != remote.days
+                    if (current.version > remoteVersion || contentDiffers) {
                         CloudSync.uploadSchedule(syncCode, current)
                     }
                 }
@@ -807,31 +920,37 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         dataStore.saveLastKnownVersion(schedule.version)
         _uiState.value = UiState.Success(schedule = schedule, fromCache = false)
 
-        // 1. Уведомить локальный SyncService
+        // 1. Уведомить локальный SyncService (если сервис запущен)
         val ctx = getApplication<Application>()
         val intent = Intent(ctx, SyncService::class.java).apply {
             action = SyncService.ACTION_UPDATE_SCHEDULE
             putExtra(SyncService.EXTRA_SCHEDULE_JSON, scheduleJson)
         }
         try {
-            ctx.startService(intent)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                ctx.startForegroundService(intent)
+            } else {
+                ctx.startService(intent)
+            }
         } catch (e: Exception) {
-            Log.e("MainViewModel", "Failed to update server schedule: ${e.message}", e)
+            Log.d("MainViewModel", "Local SyncService intent notice: ${e.message}")
         }
 
         // 2. Отправить в защищённое облако
-        viewModelScope.launch {
-            val syncCode = dataStore.syncCodeFlow.first()
-            if (syncCode.isNotBlank()) {
-                val cloudRes = CloudSync.uploadSchedule(syncCode, schedule)
-                if (cloudRes.isSuccess) {
-                    _syncStatus.value = "Сохранено и отправлено в облако ✓"
-                } else {
-                    _syncStatus.value = "Сохранено локально ✓"
-                }
+        val syncCode = dataStore.syncCodeFlow.first()
+        if (syncCode.isNotBlank()) {
+            _syncStatus.value = "Отправка в облако..."
+            val cloudRes = CloudSync.uploadSchedule(syncCode, schedule)
+            if (cloudRes.isSuccess) {
+                _syncStatus.value = "Сохранено и отправлено в облако ✓"
+                _syncError.value = null
             } else {
-                _syncStatus.value = "Сохранено локально ✓"
+                val err = cloudRes.exceptionOrNull()?.message ?: "сбой связи"
+                _syncStatus.value = "⚠️ Сохранено локально (сбой облака)"
+                _syncError.value = "Не удалось отправить в облако: $err"
             }
+        } else {
+            _syncStatus.value = "Сохранено локально ✓ (код семьи не задан)"
         }
     }
 

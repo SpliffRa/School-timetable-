@@ -80,6 +80,9 @@ class SyncService : Service() {
     /** Job для периодического опроса облачного хранилища (CLIENT) */
     private var cloudPollJob: Job? = null
 
+    /** Job для наблюдения за изменениями кэша расписания (SERVER) */
+    private var cacheObserveJob: Job? = null
+
     private val scheduleServer = ScheduleServer()
     private var multicastLock: WifiManager.MulticastLock? = null
     private lateinit var dataStore: AppDataStore
@@ -152,20 +155,24 @@ class SyncService : Service() {
     }
 
     private suspend fun startServer() {
-        // Загрузить кэшированное расписание и отдать серверу
-        val cachedJson = dataStore.cachedScheduleFlow.first()
-        if (cachedJson != null) {
-            try {
-                val schedule = json.decodeFromString<com.schedule.app.data.model.Schedule>(cachedJson)
-                scheduleServer.updateSchedule(schedule)
-                // Также сразу синхронизируем с облаком если задан код семьи
-                serviceScope.launch {
-                    val syncCode = dataStore.syncCodeFlow.first()
-                    if (syncCode.isNotBlank()) {
-                        CloudSync.uploadSchedule(syncCode, schedule)
+        acquireMulticastLock()
+
+        // Наблюдаем за обновлениями кэша расписания:
+        // как только расписание сохранено во ViewModel (например, добавлены вещи для урока),
+        // ScheduleServer немедленно получает свежую версию без необходимости Intent
+        cacheObserveJob?.cancel()
+        cacheObserveJob = serviceScope.launch {
+            dataStore.cachedScheduleFlow.collect { cachedJson ->
+                if (cachedJson != null) {
+                    try {
+                        val schedule = json.decodeFromString<com.schedule.app.data.model.Schedule>(cachedJson)
+                        scheduleServer.updateSchedule(schedule)
+                        Log.d(TAG, "ScheduleServer updated from cache flow: v${schedule.version}")
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Failed to decode cached schedule for server: ${e.message}")
                     }
                 }
-            } catch (_: Exception) {}
+            }
         }
 
         scheduleServer.start()
@@ -209,19 +216,39 @@ class SyncService : Service() {
         listenJob?.cancel()
         pollJob?.cancel()
         startCloudPolling()
+        restartClientListening()
+    }
+
+    private fun restartClientListening() {
         acquireMulticastLock()
+        listenJob?.cancel()
         listenJob = serviceScope.launch {
             try {
-                // listenForServer выходит из цикла (break) сразу после нахождения сервера
+                // 1. Быстрый параллельный опрос локальной подсети по HTTP
+                val localIp = getLocalWifiIpAddress()
+                if (!localIp.isNullOrBlank() && localIp != "127.0.0.1") {
+                    launch {
+                        PeerDiscovery.probeSubnetForServer(localIp) { serverIp ->
+                            releaseMulticastLock()
+                            listenJob?.cancel()
+                            pollJob?.cancel()
+                            pollJob = serviceScope.launch {
+                                startPolling(serverIp)
+                            }
+                        }
+                    }
+                }
+
+                // 2. Параллельное прослушивание UDP Broadcast
                 PeerDiscovery.listenForServer { ip ->
                     releaseMulticastLock()
-                    // Запускаем поллинг в отдельной корутине
+                    listenJob?.cancel()
+                    pollJob?.cancel()
                     pollJob = serviceScope.launch {
                         startPolling(ip)
                     }
                 }
-                // listenForServer вернулся нормально → listenJob завершается
-                Log.d(TAG, "listenForServer: done, polling started")
+                Log.d(TAG, "listenForServer: active (UDP + Subnet probe)")
             } catch (e: Exception) {
                 Log.w(TAG, "listenJob error: ${e.message}")
             }
@@ -229,7 +256,7 @@ class SyncService : Service() {
     }
 
     /**
-     * Фоновый опрос облачного хранилища каждые 40 секунд.
+     * Фоновый опрос облачного хранилища каждые 30 секунд.
      * Работает автономно через интернет между устройствами семьи.
      */
     private fun startCloudPolling() {
@@ -243,8 +270,14 @@ class SyncService : Service() {
                         if (result.isSuccess) {
                             val remote = result.getOrNull()
                             val lastVersion = dataStore.lastKnownVersionFlow.first()
-                            if (remote != null && remote.version > lastVersion) {
-                                Log.d(TAG, "Cloud update found: $lastVersion → ${remote.version}")
+                            val cachedJson = dataStore.cachedScheduleFlow.first()
+                            val cachedSchedule = cachedJson?.let {
+                                try { json.decodeFromString<com.schedule.app.data.model.Schedule>(it) } catch (_: Exception) { null }
+                            }
+                            val contentDiffers = cachedSchedule == null || cachedSchedule.days != remote?.days
+
+                            if (remote != null && (remote.version > lastVersion || contentDiffers)) {
+                                Log.d(TAG, "Cloud update found: $lastVersion → ${remote.version}, contentDiffers=$contentDiffers")
                                 val scheduleJson = json.encodeToString(remote)
                                 dataStore.saveCache(scheduleJson)
                                 dataStore.saveLastKnownVersion(remote.version)
@@ -260,7 +293,7 @@ class SyncService : Service() {
                 } catch (e: Exception) {
                     Log.w(TAG, "Cloud poll error: ${e.message}")
                 }
-                delay(40_000L)
+                delay(30_000L)
             }
         }
     }
@@ -268,6 +301,7 @@ class SyncService : Service() {
     private suspend fun startPolling(serverIp: String) {
         Log.d(TAG, "Starting polling server at $serverIp")
         var lastVersion: Long = dataStore.lastKnownVersionFlow.first()
+        var consecutiveErrors = 0
 
         while (true) {
             try {
@@ -276,30 +310,44 @@ class SyncService : Service() {
                     val bodyJson = resp.body<String>()
                     Json.parseToJsonElement(bodyJson).jsonObject["version"]?.jsonPrimitive?.long ?: 0L
                 }
+                consecutiveErrors = 0
 
-                if (remoteVersion > lastVersion) {
-                    Log.d(TAG, "Schedule updated! $lastVersion → $remoteVersion")
+                val cachedJson = dataStore.cachedScheduleFlow.first()
+                val cachedSchedule = cachedJson?.let {
+                    try { json.decodeFromString<com.schedule.app.data.model.Schedule>(it) } catch (_: Exception) { null }
+                }
+
+                if (remoteVersion > lastVersion || cachedSchedule == null) {
+                    Log.d(TAG, "Schedule updated via Wi-Fi! $lastVersion → $remoteVersion")
                     // Скачиваем полное расписание
                     val schedule = withContext(Dispatchers.IO) {
                         fetchSchedule(serverIp, SERVER_PORT)
                     }
-                    val scheduleJson = json.encodeToString(schedule)
-                    dataStore.saveCache(scheduleJson)
-                    dataStore.saveLastKnownVersion(remoteVersion)
-                    lastVersion = remoteVersion
+                    val contentDiffers = cachedSchedule == null || cachedSchedule.days != schedule.days
+                    if (contentDiffers || remoteVersion > lastVersion) {
+                        val scheduleJson = json.encodeToString(schedule)
+                        dataStore.saveCache(scheduleJson)
+                        dataStore.saveLastKnownVersion(remoteVersion)
+                        lastVersion = remoteVersion
 
-                    // Уведомляем ViewModel через Broadcast
-                    sendBroadcast(Intent(BROADCAST_SCHEDULE_UPDATED).apply {
-                        `package` = applicationContext.packageName
-                        putExtra(EXTRA_SCHEDULE_JSON, scheduleJson)
-                    })
+                        // Уведомляем ViewModel через Broadcast
+                        sendBroadcast(Intent(BROADCAST_SCHEDULE_UPDATED).apply {
+                            `package` = applicationContext.packageName
+                            putExtra(EXTRA_SCHEDULE_JSON, scheduleJson)
+                        })
 
-                    // Push-уведомление
-                    showUpdateNotification()
+                        // Push-уведомление
+                        showUpdateNotification()
+                    }
                 }
             } catch (e: Exception) {
-                Log.w(TAG, "Polling error: ${e.message}")
-                // При потере соединения по Wi-Fi не прерываемся, пробуем снова
+                consecutiveErrors++
+                Log.w(TAG, "Polling error ($consecutiveErrors/3): ${e.message}")
+                if (consecutiveErrors >= 3) {
+                    Log.d(TAG, "Lost connection to server at $serverIp. Restarting peer discovery...")
+                    restartClientListening()
+                    break
+                }
                 delay(POLL_INTERVAL_MS)
                 continue
             }
@@ -312,14 +360,6 @@ class SyncService : Service() {
             val schedule = json.decodeFromString<com.schedule.app.data.model.Schedule>(scheduleJson)
             scheduleServer.updateSchedule(schedule)
             Log.d(TAG, "Server schedule updated, version=${schedule.version}")
-
-            // Отправляем в облако
-            serviceScope.launch {
-                val syncCode = dataStore.syncCodeFlow.first()
-                if (syncCode.isNotBlank()) {
-                    CloudSync.uploadSchedule(syncCode, schedule)
-                }
-            }
         } catch (e: Exception) {
             Log.e(TAG, "Failed to update server schedule: ${e.message}")
         }
@@ -327,6 +367,7 @@ class SyncService : Service() {
 
     private fun stopSync() {
         releaseMulticastLock()
+        cacheObserveJob?.cancel()
         serverJob?.cancel()
         listenJob?.cancel()
         pollJob?.cancel()
@@ -359,6 +400,31 @@ class SyncService : Service() {
         } catch (e: Exception) {
             Log.w(TAG, "Could not get Wi-Fi broadcast address: ${e.message}")
             "255.255.255.255"
+        }
+    }
+
+    @Suppress("DEPRECATION")
+    private fun getLocalWifiIpAddress(): String? {
+        return try {
+            val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+            val ipInt = wm?.connectionInfo?.ipAddress ?: 0
+            if (ipInt != 0) {
+                String.format(
+                    java.util.Locale.US,
+                    "%d.%d.%d.%d",
+                    ipInt and 0xff,
+                    ipInt shr 8 and 0xff,
+                    ipInt shr 16 and 0xff,
+                    ipInt shr 24 and 0xff
+                )
+            } else {
+                java.net.NetworkInterface.getNetworkInterfaces()?.asSequence()
+                    ?.flatMap { it.inetAddresses.asSequence() }
+                    ?.firstOrNull { !it.isLoopbackAddress && it is java.net.Inet4Address }
+                    ?.hostAddress
+            }
+        } catch (_: Exception) {
+            null
         }
     }
 
