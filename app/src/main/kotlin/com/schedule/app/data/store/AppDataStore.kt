@@ -23,6 +23,7 @@ private val KEY_SYNC_CODE          = stringPreferencesKey("sync_code")
 private val KEY_FONT_SCALE          = floatPreferencesKey("font_scale")
 private val KEY_THEME_MODE          = stringPreferencesKey("theme_mode")
 private val KEY_BACKPACK_CHECKED    = stringSetPreferencesKey("backpack_checked_items")
+private val KEY_BACKPACK_UPDATED    = longPreferencesKey("backpack_last_updated")
 
 class AppDataStore(private val context: Context) {
 
@@ -90,6 +91,11 @@ class AppDataStore(private val context: Context) {
         prefs[KEY_BACKPACK_CHECKED] ?: emptySet()
     }
 
+    /** Время последнего обновления отметок рюкзака */
+    val backpackLastUpdatedFlow: Flow<Long> = context.dataStore.data.map { prefs ->
+        prefs[KEY_BACKPACK_UPDATED] ?: 0L
+    }
+
     suspend fun saveThemeMode(mode: String) {
         context.dataStore.edit { prefs -> prefs[KEY_THEME_MODE] = mode }
     }
@@ -133,7 +139,15 @@ class AppDataStore(private val context: Context) {
         context.dataStore.edit { prefs -> prefs[KEY_SYNC_CODE] = code.trim() }
     }
 
-    suspend fun toggleBackpackItem(itemKey: String) {
+    suspend fun saveBackpackCheckedItems(items: Set<String>, timestamp: Long) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_BACKPACK_CHECKED] = items
+            prefs[KEY_BACKPACK_UPDATED] = timestamp
+        }
+    }
+
+    suspend fun toggleBackpackItem(itemKey: String): Long {
+        val now = System.currentTimeMillis()
         context.dataStore.edit { prefs ->
             val current = prefs[KEY_BACKPACK_CHECKED]?.toMutableSet() ?: mutableSetOf()
             if (current.contains(itemKey)) {
@@ -142,14 +156,19 @@ class AppDataStore(private val context: Context) {
                 current.add(itemKey)
             }
             prefs[KEY_BACKPACK_CHECKED] = current
+            prefs[KEY_BACKPACK_UPDATED] = now
         }
+        return now
     }
 
-    suspend fun clearBackpackItemsForDay(dayPrefix: String) {
+    suspend fun clearBackpackItemsForDay(dayPrefix: String): Long {
+        val now = System.currentTimeMillis()
         context.dataStore.edit { prefs ->
             val current = prefs[KEY_BACKPACK_CHECKED]?.toMutableSet() ?: mutableSetOf()
             current.removeAll { it.startsWith(dayPrefix) }
             prefs[KEY_BACKPACK_CHECKED] = current
+            prefs[KEY_BACKPACK_UPDATED] = now
         }
+        return now
     }
 }

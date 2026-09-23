@@ -26,6 +26,16 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
+import androidx.compose.ui.Modifier
 import com.schedule.app.data.network.AppUpdateNotificationHelper
 import com.schedule.app.ui.component.AppUpdateDialog
 import com.schedule.app.ui.screen.EditScheduleScreen
@@ -109,29 +119,61 @@ class MainActivity : ComponentActivity() {
                 ScheduleTheme(darkTheme = isDark) {
                     val navController = rememberNavController()
 
-                    NavHost(
-                        navController = navController,
-                        startDestination = "main"
+                    Surface(
+                        modifier = Modifier.fillMaxSize(),
+                        color = MaterialTheme.colorScheme.background
                     ) {
-                        composable("main") {
-                            MainScreen(
-                                viewModel = viewModel,
-                                onNavigateToSettings = { navController.navigate("settings") },
-                                onNavigateToEditor = { navController.navigate("editor") }
-                            )
-                        }
-                        composable("settings") {
-                            SettingsScreen(
-                                viewModel = viewModel,
-                                onNavigateBack = { navController.popBackStack() },
-                                onNavigateToEditor = { navController.navigate("editor") }
-                            )
-                        }
-                        composable("editor") {
-                            EditScheduleScreen(
-                                viewModel = viewModel,
-                                onNavigateBack = { navController.popBackStack() }
-                            )
+                        NavHost(
+                            navController = navController,
+                            startDestination = "main",
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .background(MaterialTheme.colorScheme.background),
+                            enterTransition = {
+                                slideIntoContainer(
+                                    AnimatedContentTransitionScope.SlideDirection.Start,
+                                    animationSpec = tween(220, easing = FastOutSlowInEasing)
+                                ) + fadeIn(animationSpec = tween(180))
+                            },
+                            exitTransition = {
+                                slideOutOfContainer(
+                                    AnimatedContentTransitionScope.SlideDirection.Start,
+                                    animationSpec = tween(220, easing = FastOutSlowInEasing)
+                                )
+                            },
+                            popEnterTransition = {
+                                slideIntoContainer(
+                                    AnimatedContentTransitionScope.SlideDirection.End,
+                                    animationSpec = tween(220, easing = FastOutSlowInEasing)
+                                )
+                            },
+                            popExitTransition = {
+                                slideOutOfContainer(
+                                    AnimatedContentTransitionScope.SlideDirection.End,
+                                    animationSpec = tween(220, easing = FastOutSlowInEasing)
+                                ) + fadeOut(animationSpec = tween(180))
+                            }
+                        ) {
+                            composable("main") {
+                                MainScreen(
+                                    viewModel = viewModel,
+                                    onNavigateToSettings = { navController.navigate("settings") },
+                                    onNavigateToEditor = { navController.navigate("editor") }
+                                )
+                            }
+                            composable("settings") {
+                                SettingsScreen(
+                                    viewModel = viewModel,
+                                    onNavigateBack = { navController.popBackStack() },
+                                    onNavigateToEditor = { navController.navigate("editor") }
+                                )
+                            }
+                            composable("editor") {
+                                EditScheduleScreen(
+                                    viewModel = viewModel,
+                                    onNavigateBack = { navController.popBackStack() }
+                                )
+                            }
                         }
                     }
 

@@ -14,6 +14,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.schedule.app.MainActivity
 import com.schedule.app.R
+import com.schedule.app.data.model.BackpackState
 import com.schedule.app.data.store.AppDataStore
 import io.ktor.client.call.body
 import io.ktor.client.request.get
@@ -63,6 +64,10 @@ class SyncService : Service() {
 
         /** Broadcast-интент, который SyncService отправляет при получении нового расписания */
         const val BROADCAST_SCHEDULE_UPDATED = "com.schedule.app.SCHEDULE_UPDATED"
+
+        /** Broadcast-интент при получении обновленного рюкзака */
+        const val BROADCAST_BACKPACK_UPDATED = "com.schedule.app.BACKPACK_UPDATED"
+        const val EXTRA_BACKPACK_JSON = "backpack_json"
 
         /** Broadcast-интент при ошибке синхронизации */
         const val BROADCAST_SYNC_ERROR = "com.schedule.app.SYNC_ERROR"
@@ -175,6 +180,17 @@ class SyncService : Service() {
             }
         }
 
+        scheduleServer.onBackpackReceived = { backpackState ->
+            serviceScope.launch {
+                dataStore.saveBackpackCheckedItems(backpackState.checkedItems, backpackState.lastUpdated)
+                val backpackJson = json.encodeToString(backpackState)
+                sendBroadcast(Intent(BROADCAST_BACKPACK_UPDATED).apply {
+                    `package` = applicationContext.packageName
+                    putExtra(EXTRA_BACKPACK_JSON, backpackJson)
+                })
+            }
+        }
+
         scheduleServer.start()
         Log.d(TAG, "HTTP server started on :$SERVER_PORT")
 
@@ -184,6 +200,10 @@ class SyncService : Service() {
             PeerDiscovery.broadcastLoop(deviceName, broadcastAddr)
         }
         Log.d(TAG, "UDP broadcast started: $deviceName → $broadcastAddr")
+
+        // Сервер также периодически опрашивает облако для приема отметок рюкзака,
+        // когда устройства находятся в разных сетях (родитель на работе / мобильном интернете)
+        startCloudPolling()
     }
 
     /**
@@ -289,6 +309,25 @@ class SyncService : Service() {
                                 showUpdateNotification()
                             }
                         }
+
+                        // Опрос состояния рюкзака из облака
+                        val backpackResult = CloudSync.fetchBackpack(syncCode)
+                        if (backpackResult.isSuccess) {
+                            val remoteBackpack = backpackResult.getOrNull()
+                            if (remoteBackpack != null) {
+                                val localUpdated = dataStore.backpackLastUpdatedFlow.first()
+                                val localItems = dataStore.backpackCheckedItemsFlow.first()
+                                if (remoteBackpack.lastUpdated > localUpdated || (remoteBackpack.lastUpdated > 0L && remoteBackpack.checkedItems != localItems)) {
+                                    Log.d(TAG, "Cloud backpack update found: ${localItems.size} -> ${remoteBackpack.checkedItems.size} items")
+                                    dataStore.saveBackpackCheckedItems(remoteBackpack.checkedItems, remoteBackpack.lastUpdated)
+                                    val backpackJson = json.encodeToString(remoteBackpack)
+                                    sendBroadcast(Intent(BROADCAST_BACKPACK_UPDATED).apply {
+                                        `package` = applicationContext.packageName
+                                        putExtra(EXTRA_BACKPACK_JSON, backpackJson)
+                                    })
+                                }
+                            }
+                        }
                     }
                 } catch (e: Exception) {
                     Log.w(TAG, "Cloud poll error: ${e.message}")
@@ -339,6 +378,26 @@ class SyncService : Service() {
                         // Push-уведомление
                         showUpdateNotification()
                     }
+                }
+
+                // Проверяем актуальное состояние рюкзака на сервере по Wi-Fi
+                try {
+                    val backpackResp = httpClient.get("http://$serverIp:$SERVER_PORT/backpack")
+                    if (backpackResp.status.value in 200..299) {
+                        val backpackState = backpackResp.body<BackpackState>()
+                        val localUpdated = dataStore.backpackLastUpdatedFlow.first()
+                        val localItems = dataStore.backpackCheckedItemsFlow.first()
+                        if (backpackState.lastUpdated > localUpdated || (backpackState.lastUpdated > 0L && backpackState.checkedItems != localItems)) {
+                            dataStore.saveBackpackCheckedItems(backpackState.checkedItems, backpackState.lastUpdated)
+                            val backpackJson = json.encodeToString(backpackState)
+                            sendBroadcast(Intent(BROADCAST_BACKPACK_UPDATED).apply {
+                                `package` = applicationContext.packageName
+                                putExtra(EXTRA_BACKPACK_JSON, backpackJson)
+                            })
+                        }
+                    }
+                } catch (e: Exception) {
+                    Log.d(TAG, "Wi-Fi backpack fetch: ${e.message}")
                 }
             } catch (e: Exception) {
                 consecutiveErrors++

@@ -1,6 +1,7 @@
 package com.schedule.app.data.network
 
 import android.util.Log
+import com.schedule.app.data.model.BackpackState
 import com.schedule.app.data.model.Schedule
 import com.schedule.app.data.security.CryptoUtils
 import com.schedule.app.data.security.EncryptedScheduleEnvelope
@@ -149,6 +150,102 @@ object CloudSync {
                 Result.success(schedule)
             } catch (e: Exception) {
                 Log.e(TAG, "Fetch failed: ${e.message}", e)
+                Result.failure(e)
+            }
+        }
+
+    /**
+     * Отправляет зашифрованное состояние рюкзака в облачное хранилище (E2EE AES-256-GCM).
+     */
+    suspend fun uploadBackpack(syncCode: String, state: BackpackState): Result<Boolean> =
+        withContext(Dispatchers.IO) {
+            val cleanKey = if (CryptoUtils.cleanFamilyKey(syncCode).isNotBlank()) {
+                CryptoUtils.cleanFamilyKey(syncCode)
+            } else {
+                normalizeSyncCode(syncCode)
+            }
+            if (cleanKey.isBlank()) {
+                return@withContext Result.failure(IllegalArgumentException("Индивидуальный ключ семьи не задан"))
+            }
+            try {
+                val namespace = CryptoUtils.deriveStorageNamespace(cleanKey)
+                val url = "$CLOUD_BASE_URL/$namespace/backpack"
+
+                val stateJson = json.encodeToString(state)
+                val envelope = CryptoUtils.encryptPayload(stateJson, cleanKey)
+                val envelopeJson = json.encodeToString(envelope)
+
+                val response = httpClient.post(url) {
+                    contentType(ContentType.Application.Json)
+                    setBody(envelopeJson)
+                }
+
+                if (response.status.isSuccess()) {
+                    Log.d(TAG, "Uploaded encrypted backpack state (${state.checkedItems.size} items) to cloud")
+                    Result.success(true)
+                } else {
+                    val body = response.bodyAsText()
+                    Log.w(TAG, "Cloud backpack upload error: ${response.status} - $body")
+                    Result.failure(Exception("Сервер вернул статус ${response.status.value}"))
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Backpack upload failed: ${e.message}", e)
+                Result.failure(e)
+            }
+        }
+
+    /**
+     * Загружает и расшифровывает состояние рюкзака из облака.
+     */
+    suspend fun fetchBackpack(syncCode: String): Result<BackpackState?> =
+        withContext(Dispatchers.IO) {
+            val cleanKey = if (CryptoUtils.cleanFamilyKey(syncCode).isNotBlank()) {
+                CryptoUtils.cleanFamilyKey(syncCode)
+            } else {
+                normalizeSyncCode(syncCode)
+            }
+            if (cleanKey.isBlank()) {
+                return@withContext Result.failure(IllegalArgumentException("Индивидуальный ключ семьи не задан"))
+            }
+            try {
+                val namespace = CryptoUtils.deriveStorageNamespace(cleanKey)
+                val url = "$CLOUD_BASE_URL/$namespace/backpack"
+
+                val response = httpClient.get(url)
+
+                if (response.status == HttpStatusCode.NotFound) {
+                    return@withContext Result.success(null)
+                }
+
+                if (!response.status.isSuccess()) {
+                    val body = response.bodyAsText()
+                    if (body.contains("Path not found", ignoreCase = true) ||
+                        body.contains("not found", ignoreCase = true)) {
+                        return@withContext Result.success(null)
+                    }
+                    Log.w(TAG, "Cloud backpack fetch error: ${response.status} - $body")
+                    return@withContext Result.failure(Exception("Ошибка сервера ${response.status.value}"))
+                }
+
+                val bodyText = response.bodyAsText()
+                if (bodyText.isBlank() || bodyText.contains("\"error\":")) {
+                    return@withContext Result.success(null)
+                }
+
+                val stateJson = try {
+                    val envelope = json.decodeFromString<EncryptedScheduleEnvelope>(bodyText)
+                    CryptoUtils.decryptPayload(envelope, cleanKey)
+                } catch (e: InvalidFamilyKeyException) {
+                    throw e
+                } catch (e: Exception) {
+                    bodyText
+                }
+
+                val state = json.decodeFromString<BackpackState>(stateJson)
+                Log.d(TAG, "Fetched and decrypted backpack state (${state.checkedItems.size} items)")
+                Result.success(state)
+            } catch (e: Exception) {
+                Log.e(TAG, "Backpack fetch failed: ${e.message}", e)
                 Result.failure(e)
             }
         }

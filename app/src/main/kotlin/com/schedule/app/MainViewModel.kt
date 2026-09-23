@@ -12,6 +12,7 @@ import java.time.LocalDate
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.schedule.app.data.excel.ScheduleExcelManager
+import com.schedule.app.data.model.BackpackState
 import com.schedule.app.data.model.Day
 import com.schedule.app.data.model.Lesson
 import com.schedule.app.data.model.Schedule
@@ -22,7 +23,9 @@ import com.schedule.app.data.network.CloudSync
 import com.schedule.app.data.network.PeerDiscovery
 import com.schedule.app.data.network.SERVER_PORT
 import com.schedule.app.data.network.SyncService
+import com.schedule.app.data.network.fetchBackpack
 import com.schedule.app.data.network.fetchSchedule
+import com.schedule.app.data.network.sendBackpack
 import com.schedule.app.data.security.CryptoUtils
 import com.schedule.app.data.store.AppDataStore
 import android.net.wifi.WifiManager
@@ -120,6 +123,9 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     private val _backpackCheckedItems = MutableStateFlow<Set<String>>(emptySet())
     val backpackCheckedItems: StateFlow<Set<String>> = _backpackCheckedItems.asStateFlow()
 
+    private var backpackLastUpdated: Long = 0L
+    private var backpackUploadJob: Job? = null
+
     fun toggleBackpackItem(date: LocalDate, lessonNumber: Int, item: String) {
         val key = "${date}_${lessonNumber}_${item.trim().lowercase()}"
         val current = _backpackCheckedItems.value.toMutableSet()
@@ -129,9 +135,12 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             current.add(key)
         }
         _backpackCheckedItems.value = current
+        val now = System.currentTimeMillis()
+        backpackLastUpdated = now
 
         viewModelScope.launch(Dispatchers.IO) {
-            dataStore.toggleBackpackItem(key)
+            dataStore.saveBackpackCheckedItems(current, now)
+            triggerBackpackSync(current, now)
         }
     }
 
@@ -140,9 +149,39 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
         val current = _backpackCheckedItems.value.toMutableSet()
         current.removeAll { it.startsWith(prefix) }
         _backpackCheckedItems.value = current
+        val now = System.currentTimeMillis()
+        backpackLastUpdated = now
 
         viewModelScope.launch(Dispatchers.IO) {
-            dataStore.clearBackpackItemsForDay(prefix)
+            dataStore.saveBackpackCheckedItems(current, now)
+            triggerBackpackSync(current, now)
+        }
+    }
+
+    private fun triggerBackpackSync(items: Set<String>, timestamp: Long) {
+        backpackUploadJob?.cancel()
+        backpackUploadJob = viewModelScope.launch(Dispatchers.IO) {
+            delay(400) // Дебаунс 400 мс для пакетирования серии кликов
+            val syncCode = dataStore.syncCodeFlow.first()
+            if (syncCode.isNotBlank()) {
+                val state = BackpackState(checkedItems = items, lastUpdated = timestamp)
+                val cloudRes = CloudSync.uploadBackpack(syncCode, state)
+                if (cloudRes.isSuccess) {
+                    Log.d("MainViewModel", "Backpack synced to cloud (${items.size} items)")
+                }
+            }
+
+            // Если доступен локальный сервер Wi-Fi
+            val localIp = getWifiIp()
+            if (!localIp.isNullOrBlank() && localIp != "127.0.0.1" && _deviceRole.value == "CLIENT") {
+                withTimeoutOrNull(2000L) {
+                    PeerDiscovery.probeSubnetForServer(localIp) { serverIp ->
+                        launch {
+                            sendBackpack(serverIp, SERVER_PORT, BackpackState(items, timestamp))
+                        }
+                    }
+                }
+            }
         }
     }
 
@@ -378,6 +417,19 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     }
                 }
 
+                SyncService.BROADCAST_BACKPACK_UPDATED -> {
+                    val backpackJson = intent.getStringExtra(SyncService.EXTRA_BACKPACK_JSON) ?: return
+                    viewModelScope.launch {
+                        try {
+                            val state = json.decodeFromString<BackpackState>(backpackJson)
+                            if (state.lastUpdated > backpackLastUpdated || (state.lastUpdated > 0L && state.checkedItems != _backpackCheckedItems.value)) {
+                                _backpackCheckedItems.value = state.checkedItems
+                                backpackLastUpdated = state.lastUpdated
+                            }
+                        } catch (_: Exception) {}
+                    }
+                }
+
                 SyncService.BROADCAST_SYNC_ERROR -> {
                     val errorMsg = intent.getStringExtra(SyncService.EXTRA_ERROR_MESSAGE)
                         ?: "Ошибка синхронизации"
@@ -402,9 +454,10 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     init {
-        // Подписываемся на Broadcast от SyncService (оба экшена)
+        // Подписываемся на Broadcast от SyncService
         val filter = IntentFilter().apply {
             addAction(SyncService.BROADCAST_SCHEDULE_UPDATED)
+            addAction(SyncService.BROADCAST_BACKPACK_UPDATED)
             addAction(SyncService.BROADCAST_SYNC_ERROR)
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
@@ -447,10 +500,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
     private fun loadInitialState() {
         viewModelScope.launch {
-            // Подписываемся на сохранённые отметки рюкзака
+            // Подписываемся на сохранённые отметки рюкзака и время обновления
             launch {
                 dataStore.backpackCheckedItemsFlow.collect { items ->
                     _backpackCheckedItems.value = items
+                }
+            }
+            launch {
+                dataStore.backpackLastUpdatedFlow.collect { updated ->
+                    backpackLastUpdated = updated
                 }
             }
 
@@ -625,6 +683,24 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                     _syncError.value = "Расписание не загружено"
                     _syncStatus.value = "❌ Расписание не загружено"
                 }
+
+                // Синхронизируем рюкзак на сервере через облако
+                try {
+                    val bpRes = CloudSync.fetchBackpack(syncCode)
+                    if (bpRes.isSuccess && bpRes.getOrNull() != null) {
+                        val remoteBp = bpRes.getOrNull()!!
+                        if (remoteBp.lastUpdated > backpackLastUpdated) {
+                            _backpackCheckedItems.value = remoteBp.checkedItems
+                            backpackLastUpdated = remoteBp.lastUpdated
+                            dataStore.saveBackpackCheckedItems(remoteBp.checkedItems, remoteBp.lastUpdated)
+                        } else if (remoteBp.lastUpdated < backpackLastUpdated) {
+                            CloudSync.uploadBackpack(syncCode, BackpackState(_backpackCheckedItems.value, backpackLastUpdated))
+                        }
+                    } else if (backpackLastUpdated > 0L) {
+                        CloudSync.uploadBackpack(syncCode, BackpackState(_backpackCheckedItems.value, backpackLastUpdated))
+                    }
+                } catch (_: Exception) {}
+
                 delay(4_000)
                 _syncState.value = SyncState.IDLE
                 _syncError.value = null
@@ -647,6 +723,15 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                                     _syncState.value = SyncState.SUCCESS
                                     _syncStatus.value = "Синхронизировано по Wi-Fi ✓"
                                     _syncError.value = null
+
+                                    try {
+                                        val bp = fetchBackpack(serverIp, SERVER_PORT)
+                                        if (bp.lastUpdated > backpackLastUpdated) {
+                                            _backpackCheckedItems.value = bp.checkedItems
+                                            backpackLastUpdated = bp.lastUpdated
+                                            dataStore.saveBackpackCheckedItems(bp.checkedItems, bp.lastUpdated)
+                                        }
+                                    } catch (_: Exception) {}
                                 } catch (e: Exception) {
                                     Log.w("MainViewModel", "Local subnet fetch error: ${e.message}")
                                 }
@@ -665,6 +750,20 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 var cloudFetchError: String? = null
                 try {
                     val cloudRes = CloudSync.fetchSchedule(syncCode)
+
+                    // Проверяем рюкзак из облака
+                    try {
+                        val bpRes = CloudSync.fetchBackpack(syncCode)
+                        if (bpRes.isSuccess && bpRes.getOrNull() != null) {
+                            val remoteBp = bpRes.getOrNull()!!
+                            if (remoteBp.lastUpdated > backpackLastUpdated || (remoteBp.lastUpdated > 0L && remoteBp.checkedItems != _backpackCheckedItems.value)) {
+                                _backpackCheckedItems.value = remoteBp.checkedItems
+                                backpackLastUpdated = remoteBp.lastUpdated
+                                dataStore.saveBackpackCheckedItems(remoteBp.checkedItems, remoteBp.lastUpdated)
+                            }
+                        }
+                    } catch (_: Exception) {}
+
                     if (cloudRes.isSuccess) {
                         val remote = cloudRes.getOrNull()
                         val lastVersion = dataStore.lastKnownVersionFlow.first()
@@ -802,6 +901,26 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
             } catch (e: Exception) {
                 Log.d("MainViewModel", "Silent server sync: ${e.message}")
             }
+        }
+
+        // Общая синхронизация чек-листа рюкзака через защищённое облако
+        try {
+            val bpRes = CloudSync.fetchBackpack(syncCode)
+            if (bpRes.isSuccess) {
+                val remoteBp = bpRes.getOrNull()
+                if (remoteBp != null) {
+                    val localUpdated = backpackLastUpdated
+                    val localItems = _backpackCheckedItems.value
+                    if (remoteBp.lastUpdated > localUpdated || (remoteBp.lastUpdated > 0L && remoteBp.checkedItems != localItems)) {
+                        _backpackCheckedItems.value = remoteBp.checkedItems
+                        backpackLastUpdated = remoteBp.lastUpdated
+                        dataStore.saveBackpackCheckedItems(remoteBp.checkedItems, remoteBp.lastUpdated)
+                        Log.d("MainViewModel", "Silent sync: updated backpack items (${remoteBp.checkedItems.size})")
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            Log.d("MainViewModel", "Silent backpack sync: ${e.message}")
         }
     }
 

@@ -495,5 +495,39 @@ class ScheduleLogicTest {
         assertEquals("Математика", fetched?.days?.first()?.lessons?.first()?.subject)
         assertEquals(listOf("Учебник", "Циркуль"), fetched?.days?.first()?.lessons?.first()?.items)
     }
+
+    @Test
+    fun `test BackpackState serialization and deserialization`() {
+        val json = Json { ignoreUnknownKeys = true }
+        val state = com.schedule.app.data.model.BackpackState(
+            checkedItems = setOf("2026-09-24_1_учебник", "2026-09-24_2_тетрадь"),
+            lastUpdated = 1758654321000L
+        )
+        val encoded = json.encodeToString(state)
+        val decoded = json.decodeFromString<com.schedule.app.data.model.BackpackState>(encoded)
+
+        assertEquals(state.checkedItems, decoded.checkedItems)
+        assertEquals(state.lastUpdated, decoded.lastUpdated)
+    }
+
+    @Test
+    fun `test CloudSync upload and fetch backpack roundtrip with E2EE`() = kotlinx.coroutines.runBlocking {
+        val testKey = "SCH-BPTEST-1234-5678-ABCD"
+        val state = com.schedule.app.data.model.BackpackState(
+            checkedItems = setOf("2026-09-24_1_учебник", "2026-09-24_1_пенал", "2026-09-24_3_форма"),
+            lastUpdated = System.currentTimeMillis()
+        )
+
+        val uploadRes = com.schedule.app.data.network.CloudSync.uploadBackpack(testKey, state)
+        assertTrue("Backpack upload must succeed: ${uploadRes.exceptionOrNull()?.message}", uploadRes.isSuccess)
+
+        val fetchRes = com.schedule.app.data.network.CloudSync.fetchBackpack(testKey)
+        assertTrue("Backpack fetch must succeed: ${fetchRes.exceptionOrNull()?.message}", fetchRes.isSuccess)
+
+        val fetched = fetchRes.getOrNull()
+        assertNotNull("Fetched backpack must not be null", fetched)
+        assertEquals(state.lastUpdated, fetched?.lastUpdated)
+        assertEquals(state.checkedItems, fetched?.checkedItems)
+    }
 }
 
