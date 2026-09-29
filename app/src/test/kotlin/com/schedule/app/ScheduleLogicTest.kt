@@ -529,5 +529,52 @@ class ScheduleLogicTest {
         assertEquals(state.lastUpdated, fetched?.lastUpdated)
         assertEquals(state.checkedItems, fetched?.checkedItems)
     }
+
+    @Test
+    fun `test CryptoUtils Cyrillic family key transliteration and cleaning`() {
+        val clean1 = com.schedule.app.data.security.CryptoUtils.cleanFamilyKey("Семья-2026")
+        assertEquals("SEMYA2026", clean1)
+
+        val clean2 = com.schedule.app.data.security.CryptoUtils.cleanFamilyKey("Школа №123")
+        assertEquals("SHKOLA123", clean2)
+
+        assertTrue(com.schedule.app.data.security.CryptoUtils.isValidFamilyKey("Семья-2026"))
+        assertTrue(com.schedule.app.data.security.CryptoUtils.isValidFamilyKey("Школа 1"))
+        assertTrue(com.schedule.app.data.security.CryptoUtils.isValidFamilyKey("SCH-ABCD-1234-EF56-7890"))
+        assertTrue(com.schedule.app.data.security.CryptoUtils.isValidFamilyKey("12345"))
+        assertFalse(com.schedule.app.data.security.CryptoUtils.isValidFamilyKey("  "))
+        assertFalse(com.schedule.app.data.security.CryptoUtils.isValidFamilyKey("ab"))
+    }
+
+    @Test
+    fun `test Cyrillic family key AES-256-GCM encryption and cloud roundtrip`() = kotlinx.coroutines.runBlocking {
+        val cyrillicKey = "Семья-Ивановых-2026"
+        val payload = """{"hello":"мир","school":true}"""
+
+        val envelope = com.schedule.app.data.security.CryptoUtils.encryptPayload(payload, cyrillicKey)
+        val decrypted = com.schedule.app.data.security.CryptoUtils.decryptPayload(envelope, cyrillicKey)
+        assertEquals(payload, decrypted)
+
+        // Test with same transliterated key
+        val transliteratedKey = "SEMYA-IVANOVYKH-2026"
+        val decryptedWithTranslit = com.schedule.app.data.security.CryptoUtils.decryptPayload(envelope, transliteratedKey)
+        assertEquals(payload, decryptedWithTranslit)
+
+        // Upload and fetch with Cyrillic key to cloud
+        val schedule = Schedule(
+            updated = "2026-09-29T12:00:00",
+            version = System.currentTimeMillis(),
+            days = listOf(Day("Вторник", listOf(Lesson(1, "08:30–09:05", "Информатика", "", listOf("Ноутбук")))))
+        )
+        val uploadRes = com.schedule.app.data.network.CloudSync.uploadSchedule(cyrillicKey, schedule)
+        assertTrue("Cloud upload with Cyrillic key must succeed", uploadRes.isSuccess)
+
+        val fetchRes = com.schedule.app.data.network.CloudSync.fetchSchedule(cyrillicKey)
+        assertTrue("Cloud fetch with Cyrillic key must succeed", fetchRes.isSuccess)
+        val fetchedSched = fetchRes.getOrNull()
+        assertNotNull(fetchedSched)
+        assertEquals("Информатика", fetchedSched?.days?.first()?.lessons?.first()?.subject)
+    }
 }
+
 

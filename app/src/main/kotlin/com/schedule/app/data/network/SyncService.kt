@@ -111,6 +111,7 @@ class SyncService : Service() {
                 stopSelf()
             }
             ACTION_UPDATE_SCHEDULE -> {
+                promoteToForeground()
                 // ViewModel уведомляет сервис об изменении расписания на этом устройстве
                 val scheduleJson = intent.getStringExtra(EXTRA_SCHEDULE_JSON) ?: return START_NOT_STICKY
                 updateServerSchedule(scheduleJson)
@@ -276,48 +277,78 @@ class SyncService : Service() {
     }
 
     /**
-     * Фоновый опрос облачного хранилища каждые 30 секунд.
+     * Фоновый опрос облачного хранилища с адаптивным интервалом и самоисцелением.
      * Работает автономно через интернет между устройствами семьи.
      */
     private fun startCloudPolling() {
         cloudPollJob?.cancel()
         cloudPollJob = serviceScope.launch {
+            var currentInterval = 60_000L
             while (true) {
+                var hadError = false
                 try {
+                    val role = dataStore.deviceRoleFlow.first()
                     val syncCode = dataStore.syncCodeFlow.first()
                     if (syncCode.isNotBlank()) {
                         val result = CloudSync.fetchSchedule(syncCode)
+                        val lastVersion = dataStore.lastKnownVersionFlow.first()
+                        val cachedJson = dataStore.cachedScheduleFlow.first()
+                        val cachedSchedule = cachedJson?.let {
+                            try { json.decodeFromString<com.schedule.app.data.model.Schedule>(it) } catch (_: Exception) { null }
+                        }
+
                         if (result.isSuccess) {
                             val remote = result.getOrNull()
-                            val lastVersion = dataStore.lastKnownVersionFlow.first()
-                            val cachedJson = dataStore.cachedScheduleFlow.first()
-                            val cachedSchedule = cachedJson?.let {
-                                try { json.decodeFromString<com.schedule.app.data.model.Schedule>(it) } catch (_: Exception) { null }
-                            }
-                            val contentDiffers = cachedSchedule == null || cachedSchedule.days != remote?.days
+                            if (role == "SERVER") {
+                                // Самоисцеление облака: если расписание в облаке отсутствует (например, очистилось по 72ч неактивности)
+                                // или версия на сервере новее — сервер автоматически восстанавливает расписание в облаке!
+                                if (cachedSchedule != null && (remote == null || cachedSchedule.version > remote.version || cachedSchedule.days != remote.days)) {
+                                    Log.d(TAG, "Server self-healing: Cloud schedule missing or older. Re-uploading to cloud...")
+                                    val uploadRes = CloudSync.uploadSchedule(syncCode, cachedSchedule)
+                                    if (uploadRes.isSuccess) {
+                                        Log.d(TAG, "Server self-healing: Schedule restored in cloud ✓")
+                                    }
+                                }
+                            } else {
+                                // CLIENT (ребёнок):
+                                val contentDiffers = cachedSchedule == null || cachedSchedule.days != remote?.days
+                                if (remote != null && (remote.version > lastVersion || contentDiffers)) {
+                                    Log.d(TAG, "Cloud update found: $lastVersion → ${remote.version}, contentDiffers=$contentDiffers")
+                                    val scheduleJson = json.encodeToString(remote)
+                                    dataStore.saveCache(scheduleJson)
+                                    dataStore.saveLastKnownVersion(remote.version)
 
-                            if (remote != null && (remote.version > lastVersion || contentDiffers)) {
-                                Log.d(TAG, "Cloud update found: $lastVersion → ${remote.version}, contentDiffers=$contentDiffers")
-                                val scheduleJson = json.encodeToString(remote)
-                                dataStore.saveCache(scheduleJson)
-                                dataStore.saveLastKnownVersion(remote.version)
-
-                                sendBroadcast(Intent(BROADCAST_SCHEDULE_UPDATED).apply {
-                                    `package` = applicationContext.packageName
-                                    putExtra(EXTRA_SCHEDULE_JSON, scheduleJson)
-                                })
-                                showUpdateNotification()
+                                    sendBroadcast(Intent(BROADCAST_SCHEDULE_UPDATED).apply {
+                                        `package` = applicationContext.packageName
+                                        putExtra(EXTRA_SCHEDULE_JSON, scheduleJson)
+                                    })
+                                    showUpdateNotification()
+                                }
                             }
+                        } else {
+                            hadError = true
                         }
 
                         // Опрос состояния рюкзака из облака
                         val backpackResult = CloudSync.fetchBackpack(syncCode)
                         if (backpackResult.isSuccess) {
                             val remoteBackpack = backpackResult.getOrNull()
-                            if (remoteBackpack != null) {
-                                val localUpdated = dataStore.backpackLastUpdatedFlow.first()
-                                val localItems = dataStore.backpackCheckedItemsFlow.first()
-                                if (remoteBackpack.lastUpdated > localUpdated || (remoteBackpack.lastUpdated > 0L && remoteBackpack.checkedItems != localItems)) {
+                            val localUpdated = dataStore.backpackLastUpdatedFlow.first()
+                            val localItems = dataStore.backpackCheckedItemsFlow.first()
+
+                            if (role == "SERVER") {
+                                if (remoteBackpack == null && localItems.isNotEmpty()) {
+                                    CloudSync.uploadBackpack(syncCode, BackpackState(localItems, localUpdated))
+                                } else if (remoteBackpack != null && remoteBackpack.lastUpdated > localUpdated) {
+                                    dataStore.saveBackpackCheckedItems(remoteBackpack.checkedItems, remoteBackpack.lastUpdated)
+                                    val backpackJson = json.encodeToString(remoteBackpack)
+                                    sendBroadcast(Intent(BROADCAST_BACKPACK_UPDATED).apply {
+                                        `package` = applicationContext.packageName
+                                        putExtra(EXTRA_BACKPACK_JSON, backpackJson)
+                                    })
+                                }
+                            } else {
+                                if (remoteBackpack != null && (remoteBackpack.lastUpdated > localUpdated || (remoteBackpack.lastUpdated > 0L && remoteBackpack.checkedItems != localItems))) {
                                     Log.d(TAG, "Cloud backpack update found: ${localItems.size} -> ${remoteBackpack.checkedItems.size} items")
                                     dataStore.saveBackpackCheckedItems(remoteBackpack.checkedItems, remoteBackpack.lastUpdated)
                                     val backpackJson = json.encodeToString(remoteBackpack)
@@ -327,12 +358,22 @@ class SyncService : Service() {
                                     })
                                 }
                             }
+                        } else {
+                            hadError = true
                         }
                     }
                 } catch (e: Exception) {
+                    hadError = true
                     Log.w(TAG, "Cloud poll error: ${e.message}")
                 }
-                delay(30_000L)
+
+                // Защита от 429: при ошибках удваиваем интервал до 5 минут, при успехе 60 секунд
+                currentInterval = if (hadError) {
+                    (currentInterval * 2).coerceAtMost(300_000L)
+                } else {
+                    60_000L
+                }
+                delay(currentInterval)
             }
         }
     }

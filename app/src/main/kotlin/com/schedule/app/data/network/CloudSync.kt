@@ -51,6 +51,25 @@ object CloudSync {
         }
     }
 
+    private suspend fun <T> executeWithRetry(
+        maxAttempts: Int = 3,
+        delayMs: Long = 1000L,
+        block: suspend () -> T
+    ): T {
+        var lastException: Exception? = null
+        for (attempt in 1..maxAttempts) {
+            try {
+                return block()
+            } catch (e: Exception) {
+                lastException = e
+                if (attempt < maxAttempts) {
+                    kotlinx.coroutines.delay(delayMs * attempt)
+                }
+            }
+        }
+        throw lastException ?: Exception("Network request failed after $maxAttempts attempts")
+    }
+
     /**
      * Отправляет зашифрованное расписание в облачное хранилище (E2EE AES-256-GCM).
      * Облако получает только зашифрованный бинарный шум, прочитать который без ключа невозможно.
@@ -76,9 +95,11 @@ object CloudSync {
                 val envelope = com.schedule.app.data.security.CryptoUtils.encryptPayload(scheduleJson, cleanKey)
                 val envelopeJson = json.encodeToString(envelope)
 
-                val response = httpClient.post(url) {
-                    contentType(ContentType.Application.Json)
-                    setBody(envelopeJson)
+                val response = executeWithRetry {
+                    httpClient.post(url) {
+                        contentType(ContentType.Application.Json)
+                        setBody(envelopeJson)
+                    }
                 }
 
                 if (response.status.isSuccess()) {
@@ -87,7 +108,12 @@ object CloudSync {
                 } else {
                     val body = response.bodyAsText()
                     Log.w(TAG, "Cloud upload error: ${response.status} - $body")
-                    Result.failure(Exception("Сервер вернул статус ${response.status.value}"))
+                    val msg = when (response.status.value) {
+                        429 -> "Облачный сервер временно перегружен (429). Подождите минуту."
+                        403 -> "Доступ к облаку временно ограничен (403)."
+                        else -> "Сервер вернул статус ${response.status.value}"
+                    }
+                    Result.failure(Exception(msg))
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Upload failed: ${e.message}", e)
@@ -112,7 +138,9 @@ object CloudSync {
                 val namespace = CryptoUtils.deriveStorageNamespace(cleanKey)
                 val url = "$CLOUD_BASE_URL/$namespace/schedule"
 
-                val response = httpClient.get(url)
+                val response = executeWithRetry {
+                    httpClient.get(url)
+                }
 
                 if (response.status == HttpStatusCode.NotFound) {
                     Log.d(TAG, "Schedule not found in cloud namespace $namespace")
@@ -126,7 +154,12 @@ object CloudSync {
                         return@withContext Result.success(null)
                     }
                     Log.w(TAG, "Cloud fetch error: ${response.status} - $body")
-                    return@withContext Result.failure(Exception("Ошибка сервера ${response.status.value}"))
+                    val msg = when (response.status.value) {
+                        429 -> "Превышен лимит запросов к облаку (429). Подождите минуту."
+                        403 -> "Доступ к облаку ограничен (403)."
+                        else -> "Ошибка сервера ${response.status.value}"
+                    }
+                    return@withContext Result.failure(Exception(msg))
                 }
 
                 val bodyText = response.bodyAsText()
@@ -175,9 +208,11 @@ object CloudSync {
                 val envelope = CryptoUtils.encryptPayload(stateJson, cleanKey)
                 val envelopeJson = json.encodeToString(envelope)
 
-                val response = httpClient.post(url) {
-                    contentType(ContentType.Application.Json)
-                    setBody(envelopeJson)
+                val response = executeWithRetry {
+                    httpClient.post(url) {
+                        contentType(ContentType.Application.Json)
+                        setBody(envelopeJson)
+                    }
                 }
 
                 if (response.status.isSuccess()) {
@@ -186,7 +221,12 @@ object CloudSync {
                 } else {
                     val body = response.bodyAsText()
                     Log.w(TAG, "Cloud backpack upload error: ${response.status} - $body")
-                    Result.failure(Exception("Сервер вернул статус ${response.status.value}"))
+                    val msg = when (response.status.value) {
+                        429 -> "Лимит запросов к облаку (429)."
+                        403 -> "Доступ ограничен (403)."
+                        else -> "Сервер вернул статус ${response.status.value}"
+                    }
+                    Result.failure(Exception(msg))
                 }
             } catch (e: Exception) {
                 Log.e(TAG, "Backpack upload failed: ${e.message}", e)
@@ -211,7 +251,9 @@ object CloudSync {
                 val namespace = CryptoUtils.deriveStorageNamespace(cleanKey)
                 val url = "$CLOUD_BASE_URL/$namespace/backpack"
 
-                val response = httpClient.get(url)
+                val response = executeWithRetry {
+                    httpClient.get(url)
+                }
 
                 if (response.status == HttpStatusCode.NotFound) {
                     return@withContext Result.success(null)
@@ -224,7 +266,12 @@ object CloudSync {
                         return@withContext Result.success(null)
                     }
                     Log.w(TAG, "Cloud backpack fetch error: ${response.status} - $body")
-                    return@withContext Result.failure(Exception("Ошибка сервера ${response.status.value}"))
+                    val msg = when (response.status.value) {
+                        429 -> "Лимит запросов к облаку (429)."
+                        403 -> "Доступ ограничен (403)."
+                        else -> "Ошибка сервера ${response.status.value}"
+                    }
+                    return@withContext Result.failure(Exception(msg))
                 }
 
                 val bodyText = response.bodyAsText()

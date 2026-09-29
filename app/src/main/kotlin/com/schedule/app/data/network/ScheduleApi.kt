@@ -15,6 +15,9 @@ import io.ktor.http.contentType
 import io.ktor.serialization.kotlinx.json.json
 import kotlinx.serialization.json.Json
 
+import io.ktor.client.plugins.defaultRequest
+import io.ktor.client.request.header
+
 /**
  * Единственный HTTP-клиент приложения.
  * Создаётся один раз (object-уровень) и переиспользуется.
@@ -24,9 +27,13 @@ val httpClient: HttpClient = HttpClient(OkHttp) {
         json(Json { ignoreUnknownKeys = true })
     }
     install(HttpTimeout) {
-        requestTimeoutMillis = 10_000
-        connectTimeoutMillis = 10_000
-        socketTimeoutMillis = 10_000
+        requestTimeoutMillis = 20_000L
+        connectTimeoutMillis = 15_000L
+        socketTimeoutMillis = 20_000L
+    }
+    defaultRequest {
+        header("User-Agent", "Mozilla/5.0 (Linux; Android 14; Mobile) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36 SchoolSchedule/3.7")
+        header("Accept", "application/json, text/plain, */*")
     }
 }
 

@@ -58,11 +58,36 @@ object CryptoUtils {
         return sb.toString()
     }
 
+    private val CYRILLIC_TO_LATIN = mapOf(
+        'А' to "A", 'Б' to "B", 'В' to "V", 'Г' to "G", 'Д' to "D",
+        'Е' to "E", 'Ё' to "YO", 'Ж' to "ZH", 'З' to "Z", 'И' to "I",
+        'Й' to "Y", 'К' to "K", 'Л' to "L", 'М' to "M", 'Н' to "N",
+        'О' to "O", 'П' to "P", 'Р' to "R", 'С' to "S", 'Т' to "T",
+        'У' to "U", 'Ф' to "F", 'Х' to "KH", 'Ц' to "TS", 'Ч' to "CH",
+        'Ш' to "SH", 'Щ' to "SHCH", 'Ъ' to "", 'Ы' to "Y", 'Ь' to "",
+        'Э' to "E", 'Ю' to "YU", 'Я' to "YA"
+    )
+
+    private fun transliterate(input: String): String {
+        val sb = StringBuilder(input.length)
+        for (c in input) {
+            val upper = c.uppercaseChar()
+            val rep = CYRILLIC_TO_LATIN[upper]
+            if (rep != null) {
+                sb.append(rep)
+            } else {
+                sb.append(upper)
+            }
+        }
+        return sb.toString()
+    }
+
     /**
-     * Очищает введённый ключ: удаляет префикс, дефисы, пробелы и приводит к верхнему регистру.
+     * Очищает введённый ключ: удаляет префикс, дефисы, пробелы,
+     * транслитерирует кириллицу и приводит к верхнему регистру.
      */
     fun cleanFamilyKey(key: String): String {
-        var clean = key.trim().uppercase()
+        var clean = transliterate(key.trim())
         if (clean.startsWith("SCH-") || clean.startsWith("SCH:")) {
             clean = clean.substring(4)
         }
@@ -80,10 +105,10 @@ object CryptoUtils {
     }
 
     /**
-     * Проверяет валидность ключа (не менее 8 значащих символов).
+     * Проверяет валидность ключа (не менее 3 значащих символов).
      */
     fun isValidFamilyKey(key: String): Boolean {
-        return cleanFamilyKey(key).length >= 8
+        return cleanFamilyKey(key).length >= 3
     }
 
     /**

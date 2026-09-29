@@ -518,7 +518,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             // Гарантируем, что у каждого пользователя сразу есть уникальный ключ семьи
             val currentCode = dataStore.syncCodeFlow.first()
-            if (currentCode.isBlank() || !CryptoUtils.isValidFamilyKey(currentCode)) {
+            if (currentCode.isBlank()) {
                 val newKey = CryptoUtils.generateFamilyKey()
                 dataStore.saveSyncCode(newKey)
             }
@@ -708,40 +708,42 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
                 // Клиент:
                 // 1. Сначала пробуем прямой поиск сервера по Wi-Fi
                 val localIp = getWifiIp()
+                var foundWifiServerIp: String? = null
                 if (!localIp.isNullOrBlank() && localIp != "127.0.0.1") {
                     _syncStatus.value = "Поиск в сети Wi-Fi..."
                     withTimeoutOrNull(2500L) {
                         PeerDiscovery.probeSubnetForServer(localIp) { serverIp ->
-                            launch {
-                                try {
-                                    val schedule = fetchSchedule(serverIp, SERVER_PORT)
-                                    val full = ensureAllDays(schedule)
-                                    val scheduleJson = json.encodeToString(full)
-                                    dataStore.saveCache(scheduleJson)
-                                    dataStore.saveLastKnownVersion(full.version)
-                                    _uiState.value = UiState.Success(schedule = full, fromCache = false)
-                                    _syncState.value = SyncState.SUCCESS
-                                    _syncStatus.value = "Синхронизировано по Wi-Fi ✓"
-                                    _syncError.value = null
-
-                                    try {
-                                        val bp = fetchBackpack(serverIp, SERVER_PORT)
-                                        if (bp.lastUpdated > backpackLastUpdated) {
-                                            _backpackCheckedItems.value = bp.checkedItems
-                                            backpackLastUpdated = bp.lastUpdated
-                                            dataStore.saveBackpackCheckedItems(bp.checkedItems, bp.lastUpdated)
-                                        }
-                                    } catch (_: Exception) {}
-                                } catch (e: Exception) {
-                                    Log.w("MainViewModel", "Local subnet fetch error: ${e.message}")
-                                }
-                            }
+                            foundWifiServerIp = serverIp
                         }
                     }
-                    if (_syncState.value == SyncState.SUCCESS) {
+                }
+
+                if (foundWifiServerIp != null) {
+                    try {
+                        val schedule = fetchSchedule(foundWifiServerIp!!, SERVER_PORT)
+                        val full = ensureAllDays(schedule)
+                        val scheduleJson = json.encodeToString(full)
+                        dataStore.saveCache(scheduleJson)
+                        dataStore.saveLastKnownVersion(full.version)
+                        _uiState.value = UiState.Success(schedule = full, fromCache = false)
+                        _syncState.value = SyncState.SUCCESS
+                        _syncStatus.value = "Синхронизировано по Wi-Fi ✓"
+                        _syncError.value = null
+
+                        try {
+                            val bp = fetchBackpack(foundWifiServerIp!!, SERVER_PORT)
+                            if (bp.lastUpdated > backpackLastUpdated) {
+                                _backpackCheckedItems.value = bp.checkedItems
+                                backpackLastUpdated = bp.lastUpdated
+                                dataStore.saveBackpackCheckedItems(bp.checkedItems, bp.lastUpdated)
+                            }
+                        } catch (_: Exception) {}
+
                         delay(3_000)
                         _syncState.value = SyncState.IDLE
                         return@launch
+                    } catch (e: Exception) {
+                        Log.w("MainViewModel", "Local subnet fetch error: ${e.message}")
                     }
                 }
 
@@ -831,7 +833,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
     /**
      * Вызывается при переходе приложения на передний план (foreground).
      * Сразу же выполняет первую проверку синхронизации, а затем повторяет её
-     * с интервалом в 30 секунд, пока приложение открыто.
+     * с интервалом в 60 секунд, пока приложение открыто.
      */
     fun onAppForegrounded() {
         periodicSyncJob?.cancel()
@@ -841,7 +843,7 @@ class MainViewModel(application: Application) : AndroidViewModel(application) {
 
             while (isActive) {
                 checkSyncUpdateSilently()
-                delay(30_000L)
+                delay(60_000L)
             }
         }
     }
